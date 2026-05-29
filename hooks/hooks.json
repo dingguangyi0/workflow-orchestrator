@@ -1,0 +1,35 @@
+{
+  "SessionStart": [
+    {
+      "matcher": "*",
+      "hooks": [
+        {
+          "type": "prompt",
+          "prompt": "⚡ Workflow Orchestrator plugin is active. Use /workflow <goal> to decompose complex tasks into parallel agent execution. Use /wf <goal> as shorthand."
+        }
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "matcher": "*",
+      "hooks": [
+        {
+          "type": "prompt",
+          "prompt": "If you have any running workflows, check their status. Use /workflow status to see progress."
+        }
+      ]
+    }
+  ],
+  "PreToolUse": [
+    {
+      "matcher": "TaskCreate|TaskUpdate",
+      "hooks": [
+        {
+          "type": "prompt",
+          "prompt": "Update the workflow state file ($WORKFLOW_DIR/state.json) with this task status change so the monitor dashboard stays in sync."
+        }
+      ]
+    }
+  ]
+}

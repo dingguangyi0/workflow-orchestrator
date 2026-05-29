@@ -1,0 +1,34 @@
+{
+  "name": "workflow-orchestrator",
+  "version": "1.2.0",
+  "description": "多 Agent 工作流编排插件 — 100% 复刻 Claude Code Dynamic Workflows。自动拆解复杂目标为子任务，构建 DAG 依赖图，分层并行调度执行，实时可视化追踪进度，失败自动重试，最终汇总交付。集成 Superpowers 框架的 TDD/Code Review/Brainstorming 工程纪律。在任意 Claude Code 环境（包括 DeepSeek 代理）模拟 ultracode 级编排能力。",
+  "author": {
+    "name": "Ding Guangyi"
+  },
+  "license": "MIT",
+  "keywords": [
+    "workflow",
+    "orchestration",
+    "multi-agent",
+    "dag",
+    "parallel",
+    "task-decomposition",
+    "dynamic-workflows",
+    "ultracode",
+    "superpowers",
+    "tdd",
+    "code-review"
+  ],
+  "category": "productivity",
+  "skills": ["./skills/workflow"],
+  "agents": [
+    "./agents/orchestrator.md",
+    "./agents/worker.md",
+    "./agents/explorer.md",
+    "./agents/implementer.md",
+    "./agents/reviewer.md",
+    "./agents/superpowers-developer.md",
+    "./agents/superpowers-reviewer.md"
+  ],
+  "hooks": "./hooks/hooks.json"
+}

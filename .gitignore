@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Workflow runtime state
+/tmp/
+*.tmp
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local

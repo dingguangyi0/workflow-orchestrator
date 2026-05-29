@@ -1,0 +1,42 @@
+{
+  "name": "workflow-orchestrator",
+  "version": "1.2.0",
+  "source": {
+    "source": "github",
+    "repo": "dingguangyi/workflow-orchestrator"
+  },
+  "description": "Multi-agent workflow orchestration plugin for Claude Code — 100% mirrors Dynamic Workflows experience. Auto-decompose complex goals into DAG-based parallel sub-tasks with real-time monitoring, adversarial verification, checkpoint/resume, and 5 built-in templates. Integrated with Superpowers for TDD discipline. Works with ANY Claude Code backend (Anthropic, DeepSeek, OpenRouter, LiteLLM).",
+  "author": {
+    "name": "Ding Guangyi"
+  },
+  "homepage": "https://github.com/dingguangyi/workflow-orchestrator",
+  "repository": "https://github.com/dingguangyi/workflow-orchestrator",
+  "license": "MIT",
+  "keywords": [
+    "workflow",
+    "orchestration",
+    "multi-agent",
+    "dag",
+    "parallel-execution",
+    "dynamic-workflows",
+    "ultracode",
+    "superpowers",
+    "tdd",
+    "code-review",
+    "templates",
+    "deep-research",
+    "claude-code-plugin"
+  ],
+  "category": "productivity",
+  "skills": ["./skills/workflow"],
+  "agents": [
+    "./agents/orchestrator.md",
+    "./agents/worker.md",
+    "./agents/explorer.md",
+    "./agents/implementer.md",
+    "./agents/reviewer.md",
+    "./agents/superpowers-developer.md",
+    "./agents/superpowers-reviewer.md"
+  ],
+  "hooks": "./hooks/hooks.json"
+}
