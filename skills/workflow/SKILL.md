@@ -422,22 +422,21 @@ Agent(
 
 **IMPORTANT**: Send ALL Agent calls for the current layer in ONE message — they will execute in parallel.
 
-### Step 3.6: Wait for Layer Completion
+### Step 3.6: Wait for Layer Completion (NO POLLING)
 
-After launching, use `ScheduleWakeup` to check back:
-- **Research/simple tasks**: 60s-90s
-- **Code exploration**: 90s-120s
-- **Code implementation**: 120s-180s
+**CRITICAL**: Do NOT use `ScheduleWakeup` to poll for agents. The system automatically sends a notification when each background agent completes. The correct flow:
 
-**DO NOT** use more than 180s — if agents haven't completed by then, they may be stuck.
+1. Launch all agents with `run_in_background: true` in ONE message
+2. **End your turn immediately** — do not schedule wakeups, do not poll
+3. The system will re-invoke you automatically when agents complete
+4. When you receive the `<task-notification>`, collect results and update state
 
-**Fallback rule**: If agents haven't completed after 2 wakeup cycles (~4 minutes), switch to synchronous execution. Main Claude takes over the remaining tasks directly. This prevents infinite waiting.
+**Single safety net**: Schedule ONE short wakeup (60s max) only if you launched more than 3 agents and want a mid-point progress update:
+```
+ScheduleWakeup(delaySeconds=60, prompt="/wf <original goal>")
+```
 
-When you wake up:
-1. Check agent results — collect outputs
-2. Update state: completed → set completed_at + output_summary; failed → record error
-3. If all agents in layer are resolved, advance to next layer
-4. If agents still running, schedule ONE more short check (60s), then fallback
+**Hard timeout**: If agents haven't completed after 90 seconds total, switch to synchronous execution. Main Claude takes over remaining tasks directly. Do NOT wait 4 minutes.
 
 ### Step 3.7: Update State & Advance Layer
 
@@ -462,9 +461,12 @@ cat "$WORKFLOW_DIR/state.json" | python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/s
 
 ---
 
-## 🔧 Phase 4: REAL-TIME MONITORING (Continuous)
+## 🔧 Phase 4: REAL-TIME MONITORING (On-Demand)
 
-While tasks are running (during the wait in Step 3.6), you can check progress:
+There is no active polling. Check progress only when:
+- System notification arrives (agent completed)
+- User explicitly asks "how's it going?" or "/wf status"
+- After updating state at the end of a layer
 
 ### Quick Status Check
 ```bash
@@ -475,8 +477,6 @@ cat "$WORKFLOW_DIR/state.json" | python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/s
 ```bash
 cat "$WORKFLOW_DIR/state.json" | python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/scripts/monitor.py
 ```
-
-If the user asks "how's it going?" or "show progress", run the full dashboard.
 
 ---
 
@@ -852,7 +852,7 @@ Claude:
 - `WORKFLOW_DIR="/tmp/claude-workflow-session"` (fixed, never $$)
 - `subagent_type: "general-purpose"` for all task agents
 - Research tasks → synchronous (faster, cheaper)
-- Agent timeout: max 2 cycles (~4 min), then fallback sync
+- Agent wait: rely on system notifications (no polling). Safety net: single 60s wakeup, then fallback sync
 - State updates: `task_schema.py --update-status --task <id> <status>`
 - Auto-checkpoint after each layer
 - Offer template save on completion
