@@ -20,7 +20,7 @@
     "code-review"
   ],
   "category": "productivity",
-  "skills": ["./skills/workflow"],
+  "skills": ["./skills/workflow", "./skills/wf"],
   "agents": [
     "./agents/orchestrator.md",
     "./agents/worker.md",
