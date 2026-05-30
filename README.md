@@ -3,7 +3,7 @@
 > 100% 复刻 Claude Code Dynamic Workflows — 在任何 Claude Code 环境（含第三方代理）中实现多 Agent 自动编排
 
 <p align="center">
-  <b>Goal → DAG Decomposition → Parallel Agents → Real-time Monitoring → Report</b>
+  <b>v2.0.0 · Goal → DAG → Parallel Agents → Script Engine → Adversarial Verify → Report</b>
 </p>
 
 ---
@@ -34,10 +34,20 @@
 
 1. **拆解**目标为 5-10 个独立子任务
 2. **构建 DAG** 依赖图，找出哪些任务可以并行
-3. **调度 Agent** — 同层任务同时启动，最大化效率
-4. **实时监控** — 彩色进度条、状态图标、分层仪表盘
-5. **对抗验证** — Reviewer Agent 挑战每个发现
-6. **汇总报告** — 自动生成完整 Markdown 执行报告
+3. **生成脚本** — Python 编排脚本，编排逻辑脱离主上下文
+4. **调度 Agent** — 同层任务同时启动，最大化效率
+5. **对抗验证** — 每层完成后强制 Reviewer 挑战每个发现
+6. **实时监控** — 事件驱动，Agent 完成自动显示状态
+7. **汇总报告** — 自动生成完整 Markdown 执行报告
+
+### v2.0 新特性
+
+| 特性 | 说明 |
+|------|------|
+| 🐍 **编排脚本引擎** | plan.json → 自动生成可执行 Python 编排脚本 |
+| 🔍 **强制对抗验证** | 每层完成后自动 reviewer，❓标记自动重查 |
+| 💾 **细粒度 checkpoint** | Agent 级断点恢复，不仅是 Layer 级 |
+| 📺 **脚本可视化** | `dag.py --script` 展示生成脚本的 DSL 视图 |
 
 ### 为什么需要它
 
