@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          git log --oneline $(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || git rev-list --max-parents=0 HEAD)..HEAD --pretty=format:"- %s" >> $GITHUB_OUTPUT
+          echo "" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body: |
+            ## Changes
+
+            ${{ steps.changelog.outputs.CHANGELOG }}
+
+            ## Installation
+
+            ```bash
+            git clone https://github.com/dingguangyi0/workflow-orchestrator.git ~/.claude-plugin/workflow-orchestrator
+            ln -s ~/.claude-plugin/workflow-orchestrator/skills/workflow ~/.claude/skills/workflow
+            ln -s ~/.claude-plugin/workflow-orchestrator/skills/wf ~/.claude/skills/wf
+            python3 ~/.claude-plugin/workflow-orchestrator/skills/workflow/scripts/workflow_manager.py install-builtins
+            ```
+
+            Or via Claude Code plugin marketplace:
+            ```
+            /plugin marketplace add dingguangyi0/workflow-orchestrator
+            /plugin install workflow-orchestrator@dingguangyi0-workflow-orchestrator
+            ```
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+          generate_release_notes: false

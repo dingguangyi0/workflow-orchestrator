@@ -1,0 +1,209 @@
+name: CI Test
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'README.md'
+      - 'docs/**'
+      - '.github/**'
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Syntax check all Python scripts
+        run: |
+          SCRIPTS=skills/workflow/scripts
+          echo "=== Syntax Check ==="
+          for f in task_schema.py dag.py reporter.py monitor.py workflow_manager.py workflow_engine.py; do
+            python -m py_compile "$SCRIPTS/$f" && echo "  ✅ $f" || { echo "  ❌ $f"; exit 1; }
+          done
+
+      - name: Plan validation test
+        run: |
+          cd skills/workflow/scripts
+
+          # Create a valid test plan
+          cat > /tmp/test_plan.json << 'EOF'
+          {
+            "goal": "CI integration test",
+            "goal_type": "development",
+            "estimated_layers": 2,
+            "tasks": [
+              {"id":"T1","title":"Task 1","description":"Explore code","agent":"explorer","dependencies":[],"expected_output":"Report","file_patterns":["*.py"],"priority":"critical"},
+              {"id":"T2","title":"Task 2","description":"Implement fix","agent":"implementer","dependencies":["T1"],"expected_output":"Code","file_patterns":["*.py"],"priority":"high"},
+              {"id":"T3","title":"Task 3","description":"Review changes","agent":"reviewer","dependencies":["T2"],"expected_output":"Review","file_patterns":[],"priority":"critical"}
+            ]
+          }
+          EOF
+
+          echo "=== Task Schema Tests ==="
+
+          # Validate
+          python task_schema.py --validate < /tmp/test_plan.json
+          echo "  ✅ validate"
+
+          # Layers
+          python task_schema.py --layers < /tmp/test_plan.json | python -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          assert len(d['layers'])==3, f'Expected 3 layers, got {len(d[\"layers\"])}'
+          assert d['layers'][0]==['T1'], f'Layer 0 should be [T1]'
+          assert sorted(d['layers'][1])==['T2'], f'Layer 1 should be [T2]'
+          assert d['layers'][2]==['T3'], f'Layer 2 should be [T3]'
+          print('  ✅ layers')
+          "
+
+          # Init state
+          cat /tmp/test_plan.json | python task_schema.py --init-state > /tmp/test_state.json
+          python -c "
+          import json
+          s=json.load(open('/tmp/test_state.json'))
+          assert s['stats']['total']==3
+          assert s['phase']=='init'
+          print('  ✅ init-state')
+          "
+
+          # Update status
+          cat /tmp/test_state.json | python task_schema.py --update-status \
+            --task T1 in_progress --task T2 in_progress \
+            --layer 0 --phase executing > /tmp/test_state2.json
+          python -c "
+          import json
+          s=json.load(open('/tmp/test_state2.json'))
+          assert s['results']['T1']['status']=='in_progress'
+          assert s['results']['T2']['status']=='in_progress'
+          assert s['results']['T3']['status']=='pending'
+          assert s['current_layer']==0
+          assert s['phase']=='executing'
+          print('  ✅ update-status')
+          "
+
+          # Complete and verify output
+          cat /tmp/test_state2.json | python task_schema.py --update-status \
+            --task T1 completed --task T2 completed \
+            --output T1 "Found 5 files" --output T2 "Implemented feature" \
+            --layer 1 > /tmp/test_state3.json
+          python -c "
+          import json
+          s=json.load(open('/tmp/test_state3.json'))
+          assert s['results']['T1']['status']=='completed'
+          assert s['results']['T1']['output_summary']=='Found 5 files'
+          assert s['results']['T2']['output_summary']=='Implemented feature'
+          assert s['current_layer']==1
+          print('  ✅ update-status with output')
+          "
+
+      - name: DAG visualization tests
+        run: |
+          cd skills/workflow/scripts
+          cat > /tmp/test_plan.json << 'EOF'
+          {"goal":"Test","goal_type":"development","tasks":[{"id":"T1","title":"Test","description":"Test","agent":"worker","dependencies":[],"expected_output":"","file_patterns":[],"priority":"high"}]}
+          EOF
+
+          # ASCII
+          cat /tmp/test_plan.json | python dag.py --ascii > /dev/null
+          echo "  ✅ dag --ascii"
+
+          # Mermaid
+          cat /tmp/test_plan.json | python dag.py --mermaid > /dev/null
+          echo "  ✅ dag --mermaid"
+
+          # Script preview
+          cat /tmp/test_plan.json | python dag.py --script > /dev/null
+          echo "  ✅ dag --script"
+
+      - name: Workflow engine tests
+        run: |
+          cd skills/workflow/scripts
+
+          # Generate script
+          cat > /tmp/test_plan.json << 'EOF'
+          {"goal":"Engine Test","goal_type":"development","tasks":[{"id":"T1","title":"Test","description":"Run test","agent":"worker","dependencies":[],"expected_output":"OK","file_patterns":[],"priority":"high"}]}
+          EOF
+
+          python workflow_engine.py generate /tmp/test_plan.json --output /tmp/test_workflow.py
+          echo "  ✅ generate script"
+
+          # Generated script must be valid Python
+          python -m py_compile /tmp/test_workflow.py
+          echo "  ✅ generated script compiles"
+
+          # Must contain expected patterns
+          grep -q "@wf.agent" /tmp/test_workflow.py && echo "  ✅ has @wf.agent" || { echo "  ❌ missing @wf.agent"; exit 1; }
+          grep -q "wf.run" /tmp/test_workflow.py && echo "  ✅ has wf.run()" || { echo "  ❌ missing wf.run"; exit 1; }
+          grep -q "Workflow" /tmp/test_workflow.py && echo "  ✅ imports Workflow" || { echo "  ❌ missing Workflow"; exit 1; }
+
+      - name: Monitor and reporter tests
+        run: |
+          cd skills/workflow/scripts
+          cat > /tmp/test_plan.json << 'EOF'
+          {"goal":"Monitor Test","goal_type":"development","tasks":[{"id":"T1","title":"Test","description":"Test","agent":"worker","dependencies":[],"expected_output":"OK","file_patterns":[],"priority":"high"}]}
+          EOF
+
+          # Init state
+          cat /tmp/test_plan.json | python task_schema.py --init-state > /tmp/test_state.json
+
+          # Monitor
+          cat /tmp/test_state.json | python monitor.py --compact > /dev/null
+          echo "  ✅ monitor --compact"
+          cat /tmp/test_state.json | python monitor.py > /dev/null
+          echo "  ✅ monitor full"
+
+          # Reporter
+          cat /tmp/test_state.json | python reporter.py --summary > /dev/null
+          echo "  ✅ reporter --summary"
+          cat /tmp/test_state.json | python reporter.py --full > /dev/null
+          echo "  ✅ reporter --full"
+
+      - name: Workflow manager tests
+        run: |
+          cd skills/workflow/scripts
+
+          # List templates (may be empty, should not crash)
+          python workflow_manager.py list
+          echo "  ✅ template list"
+
+          # Script cache
+          python workflow_manager.py script-cache
+          echo "  ✅ script-cache"
+
+      - name: Cycle detection test
+        run: |
+          cd skills/workflow/scripts
+
+          # Create a plan with circular dependency
+          cat > /tmp/test_cycle.json << 'EOF'
+          {"goal":"Cycle Test","goal_type":"development","tasks":[
+            {"id":"T1","title":"A","description":"","agent":"worker","dependencies":["T2"],"expected_output":"","file_patterns":[],"priority":"high"},
+            {"id":"T2","title":"B","description":"","agent":"worker","dependencies":["T1"],"expected_output":"","file_patterns":[],"priority":"high"}
+          ]}
+          EOF
+
+          # Should FAIL validation (cycle detected)
+          python task_schema.py --validate < /tmp/test_cycle.json && exit 1 || echo "  ✅ cycle detected correctly"
+
+      - name: Invalid plan rejection test
+        run: |
+          cd skills/workflow/scripts
+
+          # Empty plan
+          echo '{"goal":"","tasks":[]}' | python task_schema.py --validate && exit 1 || echo "  ✅ empty plan rejected"
+
+          # Missing tasks
+          echo '{"goal":"test"}' | python task_schema.py --validate && exit 1 || echo "  ✅ missing tasks rejected"
