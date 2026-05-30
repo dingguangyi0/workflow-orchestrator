@@ -26,44 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from task_schema import TaskPlan, TaskDefinition, topological_layers, TaskStatus
 
 
-# ── Color & Style Constants ──────────────────────────────────────────────────
-
-class Colors:
-    """ANSI escape codes for terminal styling."""
-    RESET = "\033[0m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    RED = "\033[31m"
-    GREEN = "\033[32m"
-    YELLOW = "\033[33m"
-    BLUE = "\033[34m"
-    MAGENTA = "\033[35m"
-    CYAN = "\033[36m"
-    WHITE = "\033[37m"
-    BG_GREEN = "\033[42m"
-    BG_YELLOW = "\033[43m"
-    BG_RED = "\033[41m"
-    BG_BLUE = "\033[44m"
-
-    @staticmethod
-    def supports_color() -> bool:
-        """Check if terminal supports color output."""
-        if not sys.stdout.isatty():
-            return False
-        term = os.environ.get("TERM", "")
-        if term == "dumb":
-            return False
-        return True
-
-
-C = Colors
-
-# Disable colors if terminal doesn't support them
-if not C.supports_color():
-    for attr in dir(C):
-        if not attr.startswith("_") and isinstance(getattr(C, attr), str):
-            setattr(C, attr, "")
-
+from term_utils import Term as C
 
 # Import icons from task_schema
 from task_schema import STATUS_ICONS, AGENT_ICONS

@@ -258,6 +258,24 @@ BUILTIN_TEMPLATES = {
             ]
         }
     },
+    "superpowers-enhanced": {
+        "name": "superpowers-enhanced",
+        "description": "Superpowers-enhanced development: brainstorming → TDD → code review → git worktree isolation. Best for feature development and complex refactoring.",
+        "plan": {
+            "goal": "Superpowers-enhanced development workflow",
+            "goal_type": "development",
+            "estimated_layers": 3,
+            "tasks": [
+                {"id": "T1", "title": "Brainstorming & Requirements Analysis", "description": "Use Socratic questioning to clarify requirements, explore edge cases, evaluate design alternatives, and produce a spec document. DO NOT WRITE CODE.", "agent": "worker", "dependencies": [], "expected_output": "Spec document with: problem statement, constraints, edge cases, design decision with rationale", "file_patterns": [], "priority": "critical"},
+                {"id": "T2", "title": "Explore Codebase & Architecture Context", "description": "Search the codebase to understand existing architecture, patterns, entry points, and extension points relevant to this change. Identify files that will be created/modified.", "agent": "explorer", "dependencies": [], "expected_output": "Architecture report with: key files, existing patterns, integration points, risk areas", "file_patterns": [], "priority": "critical"},
+                {"id": "T3", "title": "Write Implementation Plan", "description": "Based on T1 (spec) and T2 (architecture), create a detailed implementation plan. Break into 2-5 minute micro-tasks. Identify test strategy. List files to create/modify.", "agent": "worker", "dependencies": ["T1", "T2"], "expected_output": "Implementation plan with: ordered micro-tasks, test strategy, file list, checkpoints", "file_patterns": [], "priority": "critical"},
+                {"id": "T4", "title": "TDD Implementation (RED→GREEN→REFACTOR)", "description": "Implement the changes following STRICT TDD discipline. Write failing test FIRST (RED), write minimal code to pass (GREEN), clean up (REFACTOR).", "agent": "implementer", "dependencies": ["T3"], "expected_output": "Working implementation with passing tests, following TDD cycle", "file_patterns": [], "priority": "critical"},
+                {"id": "T5", "title": "Adversarial Code Review", "description": "Review ALL changes from T4. Challenge every design decision. Verify spec compliance. Check for bugs, security issues, performance problems. Run tests yourself.", "agent": "reviewer", "dependencies": ["T4"], "expected_output": "Review report with severity-classified findings and approval verdict", "file_patterns": [], "priority": "critical"},
+                {"id": "T6", "title": "Address Review Feedback & Final Verification", "description": "Fix all critical and major findings from T5. Re-run tests. Verify all acceptance criteria from T1 are met.", "agent": "implementer", "dependencies": ["T5"], "expected_output": "All issues resolved, all tests passing, ready for merge", "file_patterns": [], "priority": "critical"},
+                {"id": "T7", "title": "Final Verification & Branch Finish", "description": "Run full test suite. Verify no regressions. Check git status is clean. Prepare merge/PR summary.", "agent": "reviewer", "dependencies": ["T6"], "expected_output": "Final verification report: all tests pass, ready to merge, PR summary", "file_patterns": [], "priority": "high"},
+            ]
+        }
+    },
 }
 
 

@@ -40,70 +40,7 @@ from task_schema import (
     WorkflowState, TaskPlan, TaskResult, TaskStatus, TaskDefinition,
     topological_layers, STATUS_ICONS, AGENT_ICONS,
 )
-
-
-# ── ANSI Terminal Control ────────────────────────────────────────────────────
-
-class Term:
-    """Terminal control sequences."""
-    RESET = "\033[0m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    ITALIC = "\033[3m"
-    UNDERLINE = "\033[4m"
-
-    # Foreground
-    RED = "\033[31m"
-    GREEN = "\033[32m"
-    YELLOW = "\033[33m"
-    BLUE = "\033[34m"
-    MAGENTA = "\033[35m"
-    CYAN = "\033[36m"
-    WHITE = "\033[37m"
-    GRAY = "\033[90m"
-
-    # Background
-    BG_RED = "\033[41m"
-    BG_GREEN = "\033[42m"
-    BG_YELLOW = "\033[43m"
-    BG_BLUE = "\033[44m"
-
-    # Cursor
-    HIDE_CURSOR = "\033[?25l"
-    SHOW_CURSOR = "\033[?25h"
-    CLEAR_SCREEN = "\033[2J"
-    CLEAR_LINE = "\033[2K"
-    MOVE_HOME = "\033[H"
-    MOVE_UP = "\033[{}A"
-    SAVE_CURSOR = "\033[s"
-    RESTORE_CURSOR = "\033[u"
-
-    SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-
-    @classmethod
-    def _disable_colors(cls):
-        for attr in dir(cls):
-            if not attr.startswith("_") and isinstance(getattr(cls, attr), str):
-                if attr not in ("SPINNER_FRAMES",):
-                    setattr(cls, attr, "")
-
-    @classmethod
-    def init(cls):
-        if not sys.stdout.isatty() or os.environ.get("TERM") == "dumb":
-            cls._disable_colors()
-
-
-Term.init()
-
-# ── Spinner State ────────────────────────────────────────────────────────────
-_spinner_idx = 0
-
-
-def _spinner() -> str:
-    global _spinner_idx
-    frame = Term.SPINNER_FRAMES[_spinner_idx % len(Term.SPINNER_FRAMES)]
-    _spinner_idx += 1
-    return frame
+from term_utils import Term, strip_ansi
 
 
 # ── Dashboard Renderer ───────────────────────────────────────────────────────
@@ -226,7 +163,7 @@ def render_dashboard(state: WorkflowState, compact: bool = False) -> str:
                     icon = f"{Term.GREEN}✅{Term.RESET}"
                     task_color = Term.GREEN
                 elif status == TaskStatus.IN_PROGRESS.value:
-                    icon = f"{Term.YELLOW}{_spinner()}{Term.RESET}"
+                    icon = f"{Term.YELLOW}{Term.spinner()}{Term.RESET}"
                     task_color = Term.YELLOW
                 elif status == TaskStatus.FAILED.value:
                     icon = f"{Term.RED}❌{Term.RESET}"
@@ -250,17 +187,17 @@ def render_dashboard(state: WorkflowState, compact: bool = False) -> str:
 
             task_line = f"     {icon} {agent_icon} {tid_formatted} {task_color}{task.title}{Term.RESET}{deps}"
             # Truncate if too long
-            if len(_strip_ansi(task_line)) > width - 4:
-                max_title = width - len(_strip_ansi(f"     {icon} {agent_icon} {tid_formatted} {deps}")) - 6
+            if len(strip_ansi(task_line)) > width - 4:
+                max_title = width - len(strip_ansi(f"     {icon} {agent_icon} {tid_formatted} {deps}")) - 6
                 task_line = f"     {icon} {agent_icon} {tid_formatted} {task_color}{task.title[:max_title]}...{Term.RESET}{deps}"
 
-            lines.append(f"{Term.BOLD}{Term.CYAN}║{Term.RESET}{task_line}{' ' * (width - len(_strip_ansi(task_line)) - 2)}{Term.BOLD}{Term.CYAN}║{Term.RESET}")
+            lines.append(f"{Term.BOLD}{Term.CYAN}║{Term.RESET}{task_line}{' ' * (width - len(strip_ansi(task_line)) - 2)}{Term.BOLD}{Term.CYAN}║{Term.RESET}")
 
             # Show error for failed tasks
             if result and result.status == TaskStatus.FAILED.value and result.error_message:
                 err = result.error_message[:width - 10].replace('\n', ' ')
                 err_line = f"     {Term.RED}└─ {err}{Term.RESET}"
-                lines.append(f"{Term.BOLD}{Term.CYAN}║{Term.RESET}{err_line}{' ' * (width - len(_strip_ansi(err_line)) - 2)}{Term.BOLD}{Term.CYAN}║{Term.RESET}")
+                lines.append(f"{Term.BOLD}{Term.CYAN}║{Term.RESET}{err_line}{' ' * (width - len(strip_ansi(err_line)) - 2)}{Term.BOLD}{Term.CYAN}║{Term.RESET}")
 
     # ── Empty space filler ──
     lines.append(f"{Term.BOLD}{Term.CYAN}║{Term.RESET}{' ' * (width - 2)}{Term.BOLD}{Term.CYAN}║{Term.RESET}")
@@ -300,14 +237,6 @@ def _render_compact(state: WorkflowState) -> str:
         f"{Term.RED}❌{failed}{Term.RESET}" if failed > 0 else "",
     ]
     return " ".join(p for p in parts if p)
-
-
-# ── ANSI Strip Helper ────────────────────────────────────────────────────────
-
-def _strip_ansi(text: str) -> str:
-    """Remove ANSI escape sequences to get visible length."""
-    import re
-    return re.sub(r'\033\[[0-9;]*[mK]', '', text)
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────

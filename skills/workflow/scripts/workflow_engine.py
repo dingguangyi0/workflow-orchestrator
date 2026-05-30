@@ -180,47 +180,65 @@ class Workflow:
             json.dump(data, f, indent=2)
         return ckpt_path
 
-    def run(self, dry_run: bool = False) -> dict:
+    def to_manifest(self) -> dict:
         """
-        Execute the workflow: DAG → layers → parallel execution.
+        Generate a structured agent-call manifest for the SKILL.md protocol.
 
-        In dry_run mode, outputs the execution plan without running agents.
-        In real mode, agents are executed via Claude Code's Agent tool.
+        This is the bridge between the Python DSL and the actual Claude Code
+        Agent orchestration. The returned dict describes exactly which agents
+        to launch, with their prompts, dependencies, and expected outputs —
+        ready for consumption by the Phase 3 execution loop.
+        """
+        layers = self._build_layers()
+        task_map = {t.name: t for t in self.tasks}
+
+        manifest = {
+            "goal": self.goal,
+            "total_tasks": len(self.tasks),
+            "total_layers": len(layers),
+            "layers": [],
+        }
+        for layer_idx, layer in enumerate(layers):
+            layer_tasks = []
+            for t in layer:
+                layer_tasks.append({
+                    "id": t.name,
+                    "title": t.name,
+                    "agent_type": t.agent_type,
+                    "depends_on": t.depends_on,
+                    "prompt": t.prompt,
+                })
+            manifest["layers"].append({
+                "index": layer_idx,
+                "parallel": len(layer) > 1,
+                "tasks": layer_tasks,
+            })
+        return manifest
+
+    def run(self, dry_run: bool = True) -> dict:
+        """
+        Show the workflow execution plan.
+
+        IMPORTANT: This method does NOT execute Claude Code agents.
+        Real orchestration happens through the SKILL.md protocol, which
+        reads the plan JSON and spawns Agent() calls per layer.
+
+        Use dry_run=True (default) to visualize the DAG.
+        Use to_manifest() to get structured data for the protocol.
         """
         if not self.tasks:
             print("❌ No tasks defined")
             return {}
 
-        # Build layers
         layers = self._build_layers()
-
-        # Initialize state
-        plan_dict = {
-            "goal": self.goal,
-            "goal_type": "other",
-            "tasks": [
-                {"id": t.name, "title": t.name, "description": t.prompt,
-                 "agent": t.agent_type, "dependencies": t.depends_on,
-                 "expected_output": "", "file_patterns": [], "priority": "high"}
-                for t in self.tasks
-            ]
-        }
-        plan = TaskPlan.from_dict(plan_dict)
-        self.state = WorkflowState(plan=plan, total_layers=len(layers))
-        for t in self.tasks:
-            self.state.results[t.name] = TaskResult(
-                task_id=t.name, status="pending", agent_type=t.agent_type
-            )
-        self._save_state()
 
         print(f"\n⚡ Workflow: {self.goal}")
         print(f"   Tasks: {len(self.tasks)} | Layers: {len(layers)}")
+        print(f"   ℹ️  This shows the execution PLAN. Real agent orchestration")
+        print(f"      is driven by the SKILL.md protocol + plan.json.")
         print()
 
-        if dry_run:
-            return self._dry_run(layers)
-        else:
-            return self._execute(layers)
+        return self._dry_run(layers)
 
     def _dry_run(self, layers: list[list[AgentTask]]) -> dict:
         """Show execution plan without running."""
@@ -231,54 +249,6 @@ class Workflow:
                 deps = f" ← {', '.join(t.depends_on)}" if t.depends_on else ""
                 print(f"  [{t.agent_type}] {t.name}{deps}")
         return {"dry_run": True, "layers": len(layers), "tasks": len(self.tasks)}
-
-    def _execute(self, layers: list[list[AgentTask]]) -> dict:
-        """Execute workflow layer by layer."""
-        results = {}
-
-        for layer_idx, layer in enumerate(layers):
-            self.state.current_layer = layer_idx
-            self.state.phase = "executing"
-
-            # Mark all tasks in this layer as in_progress
-            for t in layer:
-                self._update_state(t.name, "in_progress")
-
-            print(f"⚡ Layer {layer_idx}/{len(layers)} — {len(layer)} task(s)")
-
-            # Execute each task
-            for t in layer:
-                print(f"  🚀 {t.name} [{t.agent_type}]")
-                try:
-                    output = t.func() if callable(t.func) else t.prompt
-                    t.result = str(output)[:500]
-                    t.status = "completed"
-                    self._update_state(t.name, "completed", t.result)
-                    print(f"  ✅ {t.name} done")
-                except Exception as e:
-                    t.status = "failed"
-                    self._update_state(t.name, "failed", str(e))
-                    print(f"  ❌ {t.name} failed: {e}")
-
-                results[t.name] = t.result
-
-            # Save checkpoint after each layer
-            self._save_checkpoint(f"layer-{layer_idx}-complete")
-
-            # Adversarial verification (Phase 4.5)
-            if layer_idx < len(layers) - 1:
-                print(f"  🔍 Verifying Layer {layer_idx}...")
-
-            self._save_state()
-
-        self.state.phase = "done"
-        self._save_state()
-
-        completed = sum(1 for t in self.tasks if t.status == "completed")
-        failed = sum(1 for t in self.tasks if t.status == "failed")
-        print(f"\n🎉 Complete: {completed}/{len(self.tasks)} done, {failed} failed")
-
-        return results
 
     def resume(self) -> dict:
         """Resume from last checkpoint."""
@@ -326,15 +296,22 @@ class Workflow:
                 del remaining_dict[n]
 
         print(f"🔄 Resuming from checkpoint — {len(remaining_tasks)} tasks remaining, {len(done)} done")
-        return self._execute(layers)
+        print(f"   ℹ️  Real orchestration is driven by the SKILL.md protocol.")
+        return self._dry_run(layers)
 
 
 # ── Script Generator ────────────────────────────────────────────────────────
 
 def generate_workflow_script(plan_json: dict) -> str:
     """
-    Generate an executable Python workflow script from a TaskPlan JSON.
-    This produces a standalone script that can be run independently.
+    Generate a Python workflow script from a TaskPlan JSON.
+
+    The generated script outputs a structured manifest (JSON) describing
+    the DAG layers, agent types, and task prompts. This manifest is then
+    consumed by the SKILL.md protocol's Phase 3 execution loop.
+
+    NOTE: The script does NOT execute Claude Code agents directly.
+    Real orchestration happens through the SKILL.md text protocol.
     """
     plan = TaskPlan.from_dict(plan_json)
     layers = topological_layers(plan.tasks)
@@ -343,52 +320,103 @@ def generate_workflow_script(plan_json: dict) -> str:
     lines = []
     lines.append("#!/usr/bin/env python3")
     lines.append('"""')
-    lines.append(f"Auto-generated Workflow Script")
+    lines.append(f"Auto-generated Workflow Manifest")
     lines.append(f"Goal: {plan.goal}")
     lines.append(f"Generated: {datetime.now(timezone.utc).isoformat()}")
     lines.append(f"Tasks: {len(plan.tasks)} | Layers: {len(layers)}")
+    lines.append("")
+    lines.append("This script outputs a structured JSON manifest for the")
+    lines.append("SKILL.md workflow protocol. It does NOT execute agents.")
+    lines.append("Real orchestration is driven by the Phase 3 execution loop.")
     lines.append('"""')
     lines.append("")
-    lines.append("import sys, os")
-    lines.append("sys.path.insert(0, os.path.expanduser('~/.claude-plugin/workflow-orchestrator/skills/workflow/scripts'))")
-    lines.append("from workflow_engine import Workflow")
+    lines.append("import json, sys, os")
+    lines.append("from datetime import datetime, timezone")
     lines.append("")
-    lines.append(f"wf = Workflow({json.dumps(plan.goal)})")
     lines.append("")
-
-    # Generate @agent decorated functions for each task
-    for layer_idx, layer in enumerate(layers):
-        parallel = len(layer) > 1
-        lines.append(f"# ── Layer {layer_idx} {'(PARALLEL)' if parallel else ''} {'─' * (60 - len(str(layer_idx)))}")
-
-        for tid in layer:
-            task = task_map[tid]
-            deps_str = json.dumps(task.dependencies)
-            parallel_str = "True" if parallel else "False"
-
-            lines.append(f"")
-            lines.append(f"@wf.agent(agent_type=\"{task.agent}\", parallel={parallel_str}, depends_on={deps_str})")
-            lines.append(f"def {tid}():")
-
-            # Task description as docstring + prompt
-            desc_lines = task.description.split('\n')
-            lines.append(f'    """{desc_lines[0][:100]}"""')
-            lines.append(f"    return {json.dumps(task.description)}")
-            lines.append("")
-
+    lines.append(f"GOAL = {json.dumps(plan.goal)}")
     lines.append("")
-    lines.append("# ── Entry Point ────────────────────────────────────────────────")
+    lines.append("# ── Task Definitions ──────────────────────────────────────────")
+    lines.append("TASKS = [")
+    for t in plan.tasks:
+        lines.append(f"    {{")
+        lines.append(f"        \"id\": {json.dumps(t.id)},")
+        lines.append(f"        \"title\": {json.dumps(t.title)},")
+        lines.append(f"        \"agent\": {json.dumps(t.agent)},")
+        lines.append(f"        \"dependencies\": {json.dumps(t.dependencies)},")
+        lines.append(f"        \"description\": {json.dumps(t.description[:200])},")
+        lines.append(f"        \"priority\": {json.dumps(t.priority)},")
+        lines.append(f"    }},")
+    lines.append("]")
+    lines.append("")
+    lines.append("# ── Layer Computation (topological sort) ──────────────────────")
+    lines.append("def compute_layers(tasks):")
+    lines.append("    remaining = {t['id']: set(t['dependencies']) for t in tasks}")
+    lines.append("    completed, layers = set(), []")
+    lines.append("    while remaining:")
+    lines.append("        ready = sorted(tid for tid, deps in remaining.items() if deps.issubset(completed))")
+    lines.append("        if not ready:")
+    lines.append("            layers.append(sorted(remaining.keys()))")
+    lines.append("            break")
+    lines.append("        layers.append(ready)")
+    lines.append("        completed.update(ready)")
+    lines.append("        for tid in ready:")
+    lines.append("            del remaining[tid]")
+    lines.append("    return layers")
+    lines.append("")
+    lines.append("# ── Manifest Generation ───────────────────────────────────────")
+    lines.append("def generate_manifest():")
+    lines.append("    layers = compute_layers(TASKS)")
+    lines.append("    task_map = {t['id']: t for t in TASKS}")
+    lines.append("    manifest = {")
+    lines.append("        \"goal\": GOAL,")
+    lines.append("        \"generated_at\": datetime.now(timezone.utc).isoformat(),")
+    lines.append("        \"total_tasks\": len(TASKS),")
+    lines.append("        \"total_layers\": len(layers),")
+    lines.append("        \"layers\": []")
+    lines.append("    }")
+    lines.append("    for i, layer_ids in enumerate(layers):")
+    lines.append("        layer_tasks = []")
+    lines.append("        for tid in layer_ids:")
+    lines.append("            t = task_map[tid]")
+    lines.append("            layer_tasks.append({")
+    lines.append("                \"id\": t['id'],")
+    lines.append("                \"title\": t['title'],")
+    lines.append("                \"agent_type\": t['agent'],")
+    lines.append("                \"depends_on\": t['dependencies'],")
+    lines.append("                \"prompt\": t['description'],")
+    lines.append("            })")
+    lines.append("        manifest[\"layers\"].append({")
+    lines.append("            \"index\": i,")
+    lines.append("            \"parallel\": len(layer_ids) > 1,")
+    lines.append("            \"tasks\": layer_tasks")
+    lines.append("        })")
+    lines.append("    return manifest")
+    lines.append("")
+    lines.append("# ── Entry Point ───────────────────────────────────────────────")
     lines.append("if __name__ == '__main__':")
     lines.append("    import argparse")
-    lines.append("    parser = argparse.ArgumentParser()")
-    lines.append("    parser.add_argument('--dry-run', action='store_true', help='Show plan without executing')")
-    lines.append("    parser.add_argument('--resume', action='store_true', help='Resume from checkpoint')")
+    lines.append("    parser = argparse.ArgumentParser(")
+    lines.append("        description='Workflow Manifest Generator')")
+    lines.append("    parser.add_argument('--json', action='store_true',")
+    lines.append("                        help='Output manifest as JSON')")
+    lines.append("    parser.add_argument('--summary', action='store_true',")
+    lines.append("                        help='Print human-readable summary')")
     lines.append("    args = parser.parse_args()")
-    lines.append("    ")
-    lines.append("    if args.resume:")
-    lines.append("        wf.resume()")
-    lines.append("    else:")
-    lines.append("        wf.run(dry_run=args.dry_run)")
+    lines.append("")
+    lines.append("    manifest = generate_manifest()")
+    lines.append("")
+    lines.append("    if args.json or not args.summary:")
+    lines.append("        print(json.dumps(manifest, indent=2, ensure_ascii=False))")
+    lines.append("    if args.summary or not args.json:")
+    lines.append("        print(f\"\\n⚡ Workflow: {GOAL}\")")
+    lines.append("        print(f\"   Tasks: {manifest['total_tasks']} | Layers: {manifest['total_layers']}\")")
+    lines.append("        for layer in manifest['layers']:")
+    lines.append("            parallel = '⚡ PARALLEL' if layer['parallel'] else '→  SERIAL'")
+    lines.append("            print(f\"\\n   Layer {layer['index']} ({parallel}):\")")
+    lines.append("            for t in layer['tasks']:")
+    lines.append("                deps = f\" ← {', '.join(t['depends_on'])}\" if t['depends_on'] else ''")
+    lines.append("                print(f\"     [{t['agent_type']}] {t['id']}: {t['title']}{deps}\")")
 
     return "\n".join(lines)
 

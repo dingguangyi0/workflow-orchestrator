@@ -26,26 +26,7 @@ from task_schema import (
 )
 
 
-# ── ANSI Helpers ─────────────────────────────────────────────────────────────
-
-class C:
-    RESET = "\033[0m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-    RED = "\033[31m"
-    GREEN = "\033[32m"
-    YELLOW = "\033[33m"
-    BLUE = "\033[34m"
-    CYAN = "\033[36m"
-
-    @staticmethod
-    def _init():
-        if not sys.stdout.isatty() or os.environ.get("TERM") == "dumb":
-            for attr in dir(C):
-                if not attr.startswith("_") and isinstance(getattr(C, attr), str):
-                    setattr(C, attr, "")
-
-C._init()
+from term_utils import Term as C
 
 
 # ── Report Generation ────────────────────────────────────────────────────────
