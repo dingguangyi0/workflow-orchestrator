@@ -86,7 +86,7 @@
 
 ```bash
 # 克隆插件
-git clone https://github.com/你的用户名/workflow-orchestrator.git ~/.claude-plugin/workflow-orchestrator
+git clone https://github.com/dingguangyi0/workflow-orchestrator.git ~/.claude-plugin/workflow-orchestrator
 
 # 链接技能到 Claude Code
 ln -s ~/.claude-plugin/workflow-orchestrator/skills/workflow ~/.claude/skills/workflow
@@ -106,7 +106,7 @@ python3 ~/.claude-plugin/workflow-orchestrator/skills/workflow/scripts/workflow_
 
 ```bash
 # 添加本仓库为插件源
-/plugin marketplace add 你的用户名/workflow-orchestrator
+/plugin marketplace add dingguangyi0/workflow-orchestrator
 
 # 安装插件
 /plugin install workflow-orchestrator@你的用户名-workflow-orchestrator
@@ -551,7 +551,7 @@ workflow-orchestrator/
 
 欢迎提交 Issue 和 PR！
 
-- 🐛 Bug 报告：[GitHub Issues](https://github.com/你的用户名/workflow-orchestrator/issues)
+- 🐛 Bug 报告：[GitHub Issues](https://github.com/dingguangyi0/workflow-orchestrator/issues)
 - 💡 功能建议：同上
 - 🔧 贡献代码：Fork → PR
 
@@ -559,7 +559,7 @@ workflow-orchestrator/
 
 ```bash
 # 克隆仓库
-git clone https://github.com/你的用户名/workflow-orchestrator.git
+git clone https://github.com/dingguangyi0/workflow-orchestrator.git
 cd workflow-orchestrator
 
 # 运行测试

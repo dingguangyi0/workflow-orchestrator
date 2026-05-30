@@ -1,16 +1,16 @@
 {
   "name": "workflow-orchestrator",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "source": {
     "source": "github",
-    "repo": "dingguangyi/workflow-orchestrator"
+    "repo": "dingguangyi0/workflow-orchestrator"
   },
-  "description": "Multi-agent workflow orchestration plugin for Claude Code — 100% mirrors Dynamic Workflows experience. Auto-decompose complex goals into DAG-based parallel sub-tasks with real-time monitoring, adversarial verification, checkpoint/resume, and 5 built-in templates. Integrated with Superpowers for TDD discipline. Works with ANY Claude Code backend (Anthropic, DeepSeek, OpenRouter, LiteLLM).",
+  "description": "Multi-agent workflow orchestration plugin for Claude Code v2.0 — Python script engine + auto adversarial verification + fine-grained checkpoint. 100% mirrors Dynamic Workflows experience: DAG-based parallel sub-tasks, real-time event-driven monitoring, /wf shortcut, 5 built-in templates. Integrated with Superpowers for TDD discipline. Works with ANY Claude Code backend.",
   "author": {
     "name": "Ding Guangyi"
   },
-  "homepage": "https://github.com/dingguangyi/workflow-orchestrator",
-  "repository": "https://github.com/dingguangyi/workflow-orchestrator",
+  "homepage": "https://github.com/dingguangyi0/workflow-orchestrator",
+  "repository": "https://github.com/dingguangyi0/workflow-orchestrator",
   "license": "MIT",
   "keywords": [
     "workflow",
@@ -25,10 +25,13 @@
     "code-review",
     "templates",
     "deep-research",
+    "script-engine",
+    "adversarial-verification",
+    "checkpoint",
     "claude-code-plugin"
   ],
   "category": "productivity",
-  "skills": ["./skills/workflow"],
+  "skills": ["./skills/workflow", "./skills/wf"],
   "agents": [
     "./agents/orchestrator.md",
     "./agents/worker.md",
