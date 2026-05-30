@@ -153,17 +153,6 @@ The plugin defines custom agent definitions (orchestrator, explorer, worker, imp
 
 **Rule**: Always use `subagent_type: "general-purpose"` for task agents. Pass the agent's role-specific system prompt in the `prompt` parameter instead.
 
-## 🏷️ Task Type Auto-Detection
-
-Before Phase 1, classify the goal into one of two execution strategies:
-
-| Goal Type | Examples | Strategy |
-|-----------|----------|----------|
-| **research** | 调研报告、文档生成、技术对比、信息收集 | **Synchronous**: Main Claude does research directly (WebSearch/WebFetch). Skip background agents for Layer 0. Only use agents for synthesis/writing tasks if needed. |
-| **development** | 代码开发、重构、bug修复、功能实现 | **Agent-based**: Use background agents for code exploration and implementation. Standard protocol. |
-
-**Key insight**: Research tasks (WebSearch/WebFetch) are FASTER when done synchronously by the main Claude than when delegated to background agents. Background agents add 3-5 minutes of overhead per task with no quality benefit.
-
 ## 📁 State Directory
 
 **Always use a FIXED path** — never use `$$` (PID changes between Bash calls):
@@ -218,7 +207,7 @@ When the user's request matches the trigger conditions:
 
 ### Step 1.1: Decompose the Goal
 
-**For development tasks**: Spawn a general-purpose Agent with the orchestrator's instructions to generate the JSON plan:
+Spawn a general-purpose Agent with the orchestrator's instructions to generate the JSON plan:
 
 ```
 Agent call:
@@ -250,24 +239,6 @@ Agent call:
     - explorer tasks first (no dependencies), implementer depends on explorer, reviewer depends on implementer
     - Maximize parallelism: minimize dependency edges
     - Each task must be independently executable
-```
-
-**For research tasks**: Main Claude creates the plan directly (saves time vs spawning an agent):
-
-```bash
-# Create plan inline — research tasks are simpler to decompose
-cat > "$WORKFLOW_DIR/plan.json" << 'PLANEOF'
-{
-  "goal": "<goal>",
-  "goal_type": "research",
-  "tasks": [
-    {"id": "T1", "title": "Research topic A", "agent": "worker", ...},
-    {"id": "T2", "title": "Research topic B", "agent": "worker", ...},
-    {"id": "T3", "title": "Synthesize findings", "agent": "worker", "dependencies": ["T1","T2"], ...},
-    {"id": "T4", "title": "Generate report", "agent": "worker", "dependencies": ["T3"], ...}
-  ]
-}
-PLANEOF
 ```
 
 ### Step 1.2: Parse and Validate the Plan
@@ -360,17 +331,6 @@ Proceed with execution? [Y/n/modify]
 ## ⚡ Phase 3: LAYERED PARALLEL EXECUTION
 
 This is the core execution engine. Follow this loop exactly.
-
-### Step 3.0: Choose Execution Strategy
-
-**For research tasks**: Skip background agents. Main Claude executes all tasks synchronously:
-- Layer 0: Do all WebSearch/WebFetch calls directly (fast, 30-60s total)
-- Layer 1: Synthesize findings in-context
-- Layer 2: Write the final output file
-- Update state.json as you go (use the helper below)
-- This avoids 5+ minutes of agent overhead with zero quality loss
-
-**For development tasks**: Use the standard agent-based protocol below.
 
 ### Step 3.1: Read State
 
@@ -569,9 +529,6 @@ Agent(
 
 4. **Escalate if stuck**: If re-check still produces ❓, flag to user: "N findings remain unverified. Continue or pause?"
 
-### For research tasks
-
-Main Claude does verification inline — but MUST still go through the confidence label exercise. Do not skip.
 
 ---
 
@@ -889,11 +846,11 @@ Claude:
 
 ### Full workflow (/workflow <goal>)
 
-0. **Detect type** → research? Sync strategy. development? Agent strategy.
-1. **Parse** → Dev: general-purpose Agent as orchestrator. Research: create plan inline.
+0. **Detect goal** → All tasks use same parallel Agent strategy — no special cases.
+1. **Parse** → general-purpose Agent as orchestrator → get JSON plan
 2. **Validate** → `task_schema.py --validate`
 3. **Show** → `dag.py --ascii` + plan summary → wait for Y/n
-4. **Execute** → Research: sync. Dev: loop layers w/ agents.
+4. **Execute** → Loop layers: launch all ready tasks in parallel via Agent
 5. **Verify** → Phase 4.5: adversarial review after each layer
 6. **Checkpoint** → Auto-save after each layer
 7. **State** → Use `task_schema.py --update-status` (not inline Python)
@@ -905,8 +862,7 @@ Claude:
 **Key rules:**
 - `WORKFLOW_DIR="/tmp/claude-workflow-session"` (fixed, never $$)
 - `subagent_type: "general-purpose"` for all task agents
-- Research tasks → synchronous (faster, cheaper)
-- Agent wait: rely on system notifications (no polling). Safety net: single 60s wakeup, then fallback sync
+- Agent wait: rely on system notifications (no polling). Safety net: single 60s wakeup
 - State updates: `task_schema.py --update-status --task <id> <status>`
 - Auto-checkpoint after each layer
 - Offer template save on completion
