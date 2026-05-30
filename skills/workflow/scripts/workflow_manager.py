@@ -321,6 +321,9 @@ def main():
     p_resume.add_argument("--output-dir", default="/tmp/claude-workflow-session", help="Output directory")
     p_resume.add_argument("--auto", action="store_true", help="Auto-detect interrupted workflow")
 
+    # Script cache
+    sub.add_parser("script-cache", help="List cached workflow scripts")
+
     # Install builtins
     sub.add_parser("install-builtins", help="Install built-in workflow templates")
 
@@ -400,6 +403,19 @@ def main():
         else:
             print("Specify --from <path> or --auto")
             sys.exit(1)
+
+    elif args.command == "script-cache":
+        cache_dir = os.path.expanduser("~/.claude/workflows/scripts")
+        os.makedirs(cache_dir, exist_ok=True)
+        scripts = sorted(os.listdir(cache_dir)) if os.path.exists(cache_dir) else []
+        if not scripts:
+            print("No cached scripts")
+        else:
+            print(f"{len(scripts)} cached scripts in {cache_dir}:")
+            for s in scripts:
+                if s.endswith(".py"):
+                    size = os.path.getsize(os.path.join(cache_dir, s))
+                    print(f"  {s} ({size}B)")
 
     elif args.command == "install-builtins":
         installed = install_builtin_templates()

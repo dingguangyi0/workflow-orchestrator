@@ -1,7 +1,7 @@
 {
   "name": "workflow-orchestrator",
-  "version": "1.2.0",
-  "description": "多 Agent 工作流编排插件 — 100% 复刻 Claude Code Dynamic Workflows。自动拆解复杂目标为子任务，构建 DAG 依赖图，分层并行调度执行，实时可视化追踪进度，失败自动重试，最终汇总交付。集成 Superpowers 框架的 TDD/Code Review/Brainstorming 工程纪律。在任意 Claude Code 环境（包括 DeepSeek 代理）模拟 ultracode 级编排能力。",
+  "version": "2.0.0",
+  "description": "多 Agent 工作流编排插件 v2.0 — Python 编排脚本引擎 + 自动对抗验证 + 细粒度 checkpoint + 脚本可视化。100% 复刻 Claude Code Dynamic Workflows。集成 Superpowers TDD/Code Review 工程纪律。在任意 Claude Code 环境（包括 DeepSeek 代理）可用。",
   "author": {
     "name": "Ding Guangyi"
   },

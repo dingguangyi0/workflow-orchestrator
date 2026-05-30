@@ -237,6 +237,35 @@ def generate_ascii(plan: TaskPlan, results: Optional[dict] = None) -> str:
     return "\n".join(lines)
 
 
+# ── Script Preview ──────────────────────────────────────────────────────────
+
+def generate_script_preview(plan: TaskPlan) -> str:
+    """Generate a preview of the Python orchestration script for this plan."""
+    layers = topological_layers(plan.tasks)
+    task_map = {t.id: t for t in plan.tasks}
+
+    lines = []
+    lines.append(f"{C.BOLD}{C.CYAN}┌─ Generated workflow.py ──────────────────────────────┐{C.RESET}")
+    lines.append(f"{C.BOLD}{C.CYAN}│{C.RESET} {C.BOLD}wf = Workflow(\"{plan.goal[:50]}...\"){C.RESET}")
+    lines.append(f"{C.BOLD}{C.CYAN}│{C.RESET}")
+
+    for layer_idx, layer in enumerate(layers):
+        parallel = len(layer) > 1
+        lines.append(f"{C.BOLD}{C.CYAN}│{C.RESET} {C.YELLOW}# Layer {layer_idx} {'⚡PARALLEL' if parallel else '→SERIAL'}{C.RESET}")
+        for tid in layer:
+            task = task_map[tid]
+            deps = task.dependencies
+            deps_str = f", depends_on=[{', '.join(deps)}]" if deps else ""
+            lines.append(f"{C.BOLD}{C.CYAN}│{C.RESET} @wf.agent(\"{task.agent}\"{deps_str})")
+            lines.append(f"{C.BOLD}{C.CYAN}│{C.RESET} def {tid}(): ...")
+
+    lines.append(f"{C.BOLD}{C.CYAN}│{C.RESET}")
+    lines.append(f"{C.BOLD}{C.CYAN}│{C.RESET} {C.GREEN}wf.run()  # {len(plan.tasks)} tasks, {len(layers)} layers{C.RESET}")
+    lines.append(f"{C.BOLD}{C.CYAN}└──────────────────────────────────────────────────────┘{C.RESET}")
+
+    return "\n".join(lines)
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -249,6 +278,7 @@ def main():
     parser.add_argument("--layers", action="store_true", help="Output JSON layers array")
     parser.add_argument("--all", action="store_true", help="Output all formats")
     parser.add_argument("--results", type=str, help="Path to results JSON file for status overlay")
+    parser.add_argument("--script", action="store_true", help="Show generated Python orchestration script preview")
     args = parser.parse_args()
 
     # Read plan from stdin
@@ -276,7 +306,7 @@ def main():
             print(f"⚠️  Could not load results: {e}", file=sys.stderr)
 
     # Default to --all if no flag given
-    if not (args.mermaid or args.ascii or args.layers):
+    if not (args.mermaid or args.ascii or args.layers or args.script):
         args.all = True
 
     if args.mermaid or args.all:
@@ -286,6 +316,9 @@ def main():
 
     if args.ascii or args.all:
         print(generate_ascii(plan, results))
+
+    if args.script:
+        print(generate_script_preview(plan))
 
     if args.layers:
         layers = topological_layers(plan.tasks)

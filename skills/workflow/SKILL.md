@@ -11,11 +11,16 @@ description: >-
   - 用户说「编排执行」「并行处理」「拆解任务执行」「帮我自动完成这个复杂任务」
   - 用户说「用 workflow」「动态工作流」
   - 用户的请求涉及 3+ 个独立步骤且有依赖关系
+  - **用户的请求包含多个独立模块/服务/文件 — 自动建议 /wf**
+  - **用户说「实现 Phase A+B+C」「重构多个模块」「迁移整个项目」等复合目标**
 
   DO NOT trigger for:
   - 单一、简单的任务（一个 Agent 就能完成）
   - 纯对话/问答
   - 简单的文件读写操作
+  
+  **Proactive suggestion**: When you detect a complex multi-step request but the user didn't use /wf, pause and suggest:
+  "💡 这个任务涉及多个独立步骤，建议用 /wf 编排并行执行，可以节省 50%+ 时间。要启动工作流吗？"
 ---
 
 # ⚡ Dynamic Workflow Orchestrator
@@ -292,6 +297,35 @@ cat "$WORKFLOW_DIR/plan.json" | python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/sc
 
 ---
 
+## 🐍 Phase 1.5: SCRIPT GENERATION (v2.0)
+
+After the plan is validated, generate an executable Python orchestration script. This replicates Dynamic Workflows' JS script generation — the orchestration logic lives outside the main Claude context.
+
+### Generate the script
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/scripts/workflow_engine.py generate \
+  "$WORKFLOW_DIR/plan.json" --output "$WORKFLOW_DIR/workflow.py"
+```
+
+### Show script preview alongside DAG
+
+```bash
+cat "$WORKFLOW_DIR/plan.json" | python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/scripts/dag.py --script
+```
+
+This shows the generated `@wf.agent(...)` decorator calls for each task, giving users a code-level view of the orchestration.
+
+### Script cache
+
+Save the generated script to the cache for future reuse:
+
+```bash
+cp "$WORKFLOW_DIR/workflow.py" ~/.claude/workflows/scripts/workflow-$(date +%Y%m%d-%H%M%S).py
+```
+
+---
+
 ## 📊 Phase 2: VISUALIZE & CONFIRM
 
 ### Step 2.1: Generate ASCII Dashboard
@@ -461,63 +495,83 @@ cat "$WORKFLOW_DIR/state.json" | python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/s
 
 ---
 
-## 🔧 Phase 4: REAL-TIME MONITORING (On-Demand)
+## 🔧 Phase 4: REAL-TIME MONITORING (Event-Driven)
 
-There is no active polling. Check progress only when:
-- System notification arrives (agent completed)
-- User explicitly asks "how's it going?" or "/wf status"
-- After updating state at the end of a layer
+**No polling.** Status updates happen automatically at these events:
+1. **Agent completion** → system sends `<task-notification>` → show compact status
+2. **Layer completion** → show full dashboard
+3. **User asks** → show full dashboard on demand
 
-### Quick Status Check
+### Auto-Status on Agent Completion
+When you receive a `<task-notification>` that an agent finished:
 ```bash
+# Auto-show compact status — keep user informed without manual check
 cat "$WORKFLOW_DIR/state.json" | python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/scripts/monitor.py --compact
 ```
 
-### Full Dashboard Refresh
+### Full Dashboard (on demand or layer end)
 ```bash
 cat "$WORKFLOW_DIR/state.json" | python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/scripts/monitor.py
 ```
 
 ---
 
-## 🔍 Phase 4.5: ADVERSARIAL VERIFICATION (Cross-Verification)
+## 🔍 Phase 4.5: ADVERSARIAL VERIFICATION (MANDATORY)
 
-After each layer completes, before advancing to the next layer, run verification on the completed tasks' outputs. This is how native Dynamic Workflows achieves reliable results.
+**This phase CANNOT be skipped.** After every layer completes, before advancing, you MUST run adversarial verification. This is how native Dynamic Workflows achieves reliable results — agents check agents, findings are challenged, nothing is taken at face value.
 
-### When to Verify
-- Layer has 2+ completed tasks → verify consistency between them
-- A task's output will be used by downstream tasks → verify correctness
-- The task type is `reviewer` → its findings are the verification itself
+### MANDATORY Steps
 
-### Verification Steps
+After each layer:
 
-1. **Cross-check**: Compare outputs from parallel tasks. Do any findings contradict each other?
-2. **Challenge**: For each finding, ask "could this be wrong?" Search for counter-evidence.
-3. **Gap check**: What should have been found but wasn't? Are there obvious omissions?
-4. **Confidence label**: Assign each finding: ✅ Confirmed / ⚠️ Likely / ❓ Unverified
-
-### Implementation
-For development tasks, spawn a reviewer agent:
+1. **Launch a reviewer Agent** (do NOT skip even for 1-task layers):
 ```
 Agent(
-  description: "Verify Layer N results"
+  description: "Adversarial review of Layer N"
   subagent_type: "general-purpose"
   run_in_background: true
   prompt: |
-    You are an adversarial reviewer. Your job is to CHALLENGE findings, not accept them.
+    You are an ADVERSARIAL reviewer. Your ONLY job is to CHALLENGE. Never accept.
     
-    ## Completed Task Outputs
-    <outputs from all completed tasks in this layer>
+    ## Completed Tasks in This Layer
+    <all task outputs from current layer>
     
-    For each finding:
-    1. Try to refute it — search for contradictory evidence
-    2. Check if it's actually correct (not just plausible)
-    3. Identify any missing findings or gaps
+    For EVERY finding, answer:
+    1. Could this be WRONG? Try to refute it.
+    2. Is there contradictory evidence I missed?
+    3. What was NOT found that should have been?
     
-    Output a verification report with confidence labels.
+    ## REQUIRED Output Format
+    For each finding, assign a confidence label:
+    ✅ CONFIRMED — verified against multiple sources / tested
+    ⚠️ LIKELY — plausible but not fully verified
+    ❓ UNVERIFIED — cannot confirm, needs re-check
 ```
 
-For research tasks, main Claude does verification inline (faster).
+2. **Process verification results**:
+   - ✅ CONFIRMED findings → accept, pass to downstream tasks
+   - ⚠️ LIKELY findings → accept with caveat note
+   - ❓ UNVERIFIED findings → **auto re-check**: launch a second reviewer with a different prompt angle
+
+3. **Auto re-check for unverified**:
+   - If any finding is marked ❓, immediately spawn one more reviewer:
+   ```
+   Agent(
+     description: "Re-verify unconfirmed findings from Layer N"
+     subagent_type: "general-purpose"
+     prompt: |
+       The first review marked these findings as ❓UNVERIFIED. 
+       Try a DIFFERENT approach to verify them:
+       <unverified findings>
+       
+       For each: either confirm with evidence, or explicitly state "cannot verify"
+   ```
+
+4. **Escalate if stuck**: If re-check still produces ❓, flag to user: "N findings remain unverified. Continue or pause?"
+
+### For research tasks
+
+Main Claude does verification inline — but MUST still go through the confidence label exercise. Do not skip.
 
 ---
 
