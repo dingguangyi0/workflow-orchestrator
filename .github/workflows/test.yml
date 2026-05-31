@@ -30,7 +30,7 @@ jobs:
         run: |
           SCRIPTS=skills/workflow/scripts
           echo "=== Syntax Check ==="
-          for f in task_schema.py dag.py reporter.py monitor.py workflow_manager.py workflow_engine.py; do
+          for f in task_schema.py dag.py reporter.py monitor.py workflow_manager.py workflow_engine.py term_utils.py; do
             python -m py_compile "$SCRIPTS/$f" && echo "  ✅ $f" || { echo "  ❌ $f"; exit 1; }
           done
 
@@ -145,9 +145,9 @@ jobs:
           echo "  ✅ generated script compiles"
 
           # Must contain expected patterns
-          grep -q "@wf.agent" /tmp/test_workflow.py && echo "  ✅ has @wf.agent" || { echo "  ❌ missing @wf.agent"; exit 1; }
-          grep -q "wf.run" /tmp/test_workflow.py && echo "  ✅ has wf.run()" || { echo "  ❌ missing wf.run"; exit 1; }
-          grep -q "Workflow" /tmp/test_workflow.py && echo "  ✅ imports Workflow" || { echo "  ❌ missing Workflow"; exit 1; }
+          grep -q "compute_layers" /tmp/test_workflow.py && echo "  ✅ has compute_layers" || { echo "  ❌ missing compute_layers"; exit 1; }
+          grep -q "generate_manifest" /tmp/test_workflow.py && echo "  ✅ has generate_manifest()" || { echo "  ❌ missing generate_manifest"; exit 1; }
+          grep -q "Manifest" /tmp/test_workflow.py && echo "  ✅ has Manifest output" || { echo "  ❌ missing Manifest"; exit 1; }
 
       - name: Monitor and reporter tests
         run: |

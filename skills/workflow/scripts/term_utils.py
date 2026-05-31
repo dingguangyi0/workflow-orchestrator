@@ -61,6 +61,7 @@ class Term:
     _enabled: bool = True
     _spinner_idx: int = 0
     _initialized: bool = False
+    _original_escapes: dict = {}  # saved for recovery after _disable_colors
 
     # ── Detection ──────────────────────────────────────────────────────────
 
@@ -84,29 +85,40 @@ class Term:
         Args:
             force: True to force-enable, False to force-disable, None for auto-detect.
         """
-        if cls._initialized:
+        if cls._initialized and force is None:
             return
-        cls._initialized = True
 
         if force is True:
             cls._enabled = True
+            cls._restore_colors()
         elif force is False:
             cls._enabled = False
+            cls._disable_colors()
         else:
             cls._enabled = cls.supports_color()
+            if not cls._enabled:
+                cls._disable_colors()
 
-        if not cls._enabled:
-            cls._disable_colors()
+        cls._initialized = True
 
     @classmethod
     def _disable_colors(cls):
-        """Clear all ANSI escape sequences — disables all formatting."""
+        """Clear all ANSI escape sequences — disables all formatting.
+        Saves original values so they can be restored later."""
         for attr_name in dir(cls):
             if attr_name.startswith("_"):
                 continue
             val = getattr(cls, attr_name)
             if isinstance(val, str) and val.startswith("\033"):
+                cls._original_escapes[attr_name] = val
                 setattr(cls, attr_name, "")
+
+    @classmethod
+    def _restore_colors(cls):
+        """Restore ANSI escape sequences previously cleared by _disable_colors."""
+        for attr_name, val in cls._original_escapes.items():
+            setattr(cls, attr_name, val)
+        cls._original_escapes.clear()
 
     @classmethod
     def spinner(cls) -> str:

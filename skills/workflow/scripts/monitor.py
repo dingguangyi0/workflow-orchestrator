@@ -219,14 +219,16 @@ def _render_compact(state: WorkflowState) -> str:
     completed = state.completed_count
     failed = state.failed_count
     in_prog = state.in_progress_count
-    pct = round((completed / total * 100)) if total > 0 else 0
+    skipped = sum(1 for r in state.results.values() if r.status == TaskStatus.SKIPPED.value)
+    pct = round((completed + skipped) / total * 100) if total > 0 else 0
 
     bar_width = 20
     filled = int(bar_width * completed / total) if total > 0 else 0
+    failed_fill = int(bar_width * failed / total) if total > 0 else 0
     in_prog_fill = int(bar_width * in_prog / total) if total > 0 else 0
-    empty = bar_width - filled - in_prog_fill
+    empty = bar_width - filled - in_prog_fill - failed_fill
 
-    bar = f"{Term.BG_GREEN}{' ' * filled}{Term.RESET}{Term.BG_YELLOW}{' ' * in_prog_fill}{Term.RESET}{Term.DIM}{'░' * empty}{Term.RESET}"
+    bar = f"{Term.BG_GREEN}{' ' * filled}{Term.RESET}{Term.BG_YELLOW}{' ' * in_prog_fill}{Term.RESET}{Term.BG_RED}{' ' * failed_fill}{Term.RESET}{Term.DIM}{'░' * empty}{Term.RESET}"
 
     parts = [
         f"⚡ WF",
@@ -329,9 +331,6 @@ def _watch_mode(filepath: str, interval: int, compact: bool, once: bool):
                 print(render_dashboard(state))
 
             if once or state.phase == "done":
-                break
-
-            if state.phase == "done":
                 break
 
             time.sleep(interval)

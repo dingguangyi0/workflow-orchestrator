@@ -408,6 +408,11 @@ def main():
             if state is None:
                 print("No interrupted workflow found")
                 sys.exit(1)
+            state_path = os.path.join(args.output_dir, "state.json")
+            state = resume_from_checkpoint(state_path, args.output_dir)
+            if state is None:
+                print("❌ Failed to resume from interrupted workflow")
+                sys.exit(1)
             print(f"✅ Resuming interrupted workflow: {state.get('plan', {}).get('goal', '')[:80]}")
             print(f"   Progress: {state.get('stats', {}).get('progress_pct', 0):.0f}%")
             print(f"   Phase: {state.get('phase', 'unknown')}")

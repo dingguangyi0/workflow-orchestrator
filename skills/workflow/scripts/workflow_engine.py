@@ -36,11 +36,10 @@ from __future__ import annotations
 import json
 import os
 import sys
-import textwrap
 import argparse
+import subprocess
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 from dataclasses import dataclass, field
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -57,8 +56,8 @@ class AgentTask:
     """A single agent task in the workflow."""
     func: Callable
     name: str
-    agent_type: str  # explorer, worker, implementer, reviewer
-    parallel: bool = False
+    title: str = ""  # human-readable title (from TaskDefinition)
+    agent_type: str = "worker"  # explorer, worker, implementer, reviewer
     depends_on: list = field(default_factory=list)
     prompt: str = ""
     result: Optional[str] = None
@@ -99,16 +98,16 @@ class Workflow:
         self.goal = plan.goal
         for t in plan.tasks:
             at = AgentTask(
-                func=lambda: t.description,
+                func=lambda desc=t.description: desc,
                 name=t.id,
+                title=t.title,
                 agent_type=t.agent,
-                parallel=len(t.dependencies) == 0,
                 depends_on=t.dependencies,
                 prompt=t.description,
             )
             self.tasks.append(at)
 
-    def agent(self, agent_type: str = "worker", *, parallel: bool = False,
+    def agent(self, agent_type: str = "worker", *,
               depends_on: list = None):
         """Decorator: register a function as a workflow agent task."""
         depends_on = depends_on or []
@@ -116,8 +115,8 @@ class Workflow:
             task = AgentTask(
                 func=func,
                 name=func.__name__,
+                title=func.__name__,
                 agent_type=agent_type,
-                parallel=parallel,
                 depends_on=[d.__name__ if callable(d) else d for d in depends_on],
                 prompt=func.__doc__ or func(),
             )
@@ -125,24 +124,22 @@ class Workflow:
             return func
         return decorator
 
-    def _build_layers(self) -> list[list[AgentTask]]:
-        """Build DAG layers from task dependencies."""
-        task_map = {t.name: t for t in self.tasks}
-        remaining = {t.name: set(t.depends_on) for t in self.tasks}
-        completed: set = set()
-        layers = []
+    def _build_layers(self, tasks: Optional[list[AgentTask]] = None) -> list[list[AgentTask]]:
+        """Build DAG layers from task dependencies. Delegates to shared topological_layers()."""
+        if tasks is None:
+            tasks = self.tasks
+        if not tasks:
+            return []
 
-        while remaining:
-            ready = [name for name, deps in remaining.items()
-                     if deps.issubset(completed)]
-            if not ready:
-                layers.append([task_map[n] for n in remaining])
-                break
-            layers.append([task_map[n] for n in sorted(ready)])
-            completed.update(ready)
-            for n in ready:
-                del remaining[n]
-        return layers
+        task_map = {t.name: t for t in tasks}
+        # Convert to TaskDefinition-like objects for the shared algorithm
+        task_defs = [
+            TaskDefinition(id=t.name, title=t.title, description="",
+                           agent=t.agent_type, dependencies=t.depends_on)
+            for t in tasks
+        ]
+        layer_ids = topological_layers(task_defs)
+        return [[task_map[tid] for tid in layer] for layer in layer_ids]
 
     def _update_state(self, task_name: str, status: str, output: str = ""):
         """Update state file after each agent completes."""
@@ -203,7 +200,7 @@ class Workflow:
             for t in layer:
                 layer_tasks.append({
                     "id": t.name,
-                    "title": t.name,
+                    "title": t.title or t.name,
                     "agent_type": t.agent_type,
                     "depends_on": t.depends_on,
                     "prompt": t.prompt,
@@ -215,7 +212,7 @@ class Workflow:
             })
         return manifest
 
-    def run(self, dry_run: bool = True) -> dict:
+    def run(self) -> dict:
         """
         Show the workflow execution plan.
 
@@ -223,7 +220,6 @@ class Workflow:
         Real orchestration happens through the SKILL.md protocol, which
         reads the plan JSON and spawns Agent() calls per layer.
 
-        Use dry_run=True (default) to visualize the DAG.
         Use to_manifest() to get structured data for the protocol.
         """
         if not self.tasks:
@@ -260,40 +256,32 @@ class Workflow:
         with open(state_path) as f:
             data = json.load(f)
 
-        # Reset in_progress tasks to pending
+        # Reset in_progress tasks to pending and write back to disk
         for tid, r in data.get("results", {}).items():
             if r.get("status") == "in_progress":
                 r["status"] = "pending"
+                r["started_at"] = ""
 
-        # Find which tasks are already done
+        # Persist the reset state
+        with open(state_path, "w") as f:
+            json.dump(data, f, indent=2)
+
+        # Find which tasks are already done (completed or skipped)
         done = {tid for tid, r in data.get("results", {}).items()
-                if r.get("status") == "completed"}
+                if r.get("status") in ("completed", "skipped")}
 
-        # Build remaining layers
+        # Build remaining layers — strip done dependencies and delegate to _build_layers
         remaining_tasks = [t for t in self.tasks if t.name not in done]
         if not remaining_tasks:
             print("✅ All tasks already completed")
             return {}
 
-        # Rebuild layers from remaining
-        task_map = {t.name: t for t in remaining_tasks}
-        remaining_dict = {t.name: set(t.depends_on) for t in remaining_tasks}
-        # Remove done deps
-        for deps in remaining_dict.values():
-            deps.intersection_update({t.name for t in remaining_tasks})
+        # Remove dependencies on already-completed tasks
+        remaining_set = {t.name for t in remaining_tasks}
+        for t in remaining_tasks:
+            t.depends_on = [d for d in t.depends_on if d in remaining_set]
 
-        completed_deps: set = set()
-        layers = []
-        while remaining_dict:
-            ready = [n for n, deps in remaining_dict.items()
-                     if deps.issubset(completed_deps)]
-            if not ready:
-                layers.append([task_map[n] for n in remaining_dict])
-                break
-            layers.append([task_map[n] for n in sorted(ready)])
-            completed_deps.update(ready)
-            for n in ready:
-                del remaining_dict[n]
+        layers = self._build_layers(remaining_tasks)
 
         print(f"🔄 Resuming from checkpoint — {len(remaining_tasks)} tasks remaining, {len(done)} done")
         print(f"   ℹ️  Real orchestration is driven by the SKILL.md protocol.")
@@ -320,8 +308,8 @@ def generate_workflow_script(plan_json: dict) -> str:
     lines = []
     lines.append("#!/usr/bin/env python3")
     lines.append('"""')
-    lines.append(f"Auto-generated Workflow Manifest")
-    lines.append(f"Goal: {plan.goal}")
+    lines.append("Auto-generated Workflow Manifest")
+    lines.append(f"Goal: {json.dumps(plan.goal)}")
     lines.append(f"Generated: {datetime.now(timezone.utc).isoformat()}")
     lines.append(f"Tasks: {len(plan.tasks)} | Layers: {len(layers)}")
     lines.append("")
@@ -344,7 +332,7 @@ def generate_workflow_script(plan_json: dict) -> str:
         lines.append(f"        \"title\": {json.dumps(t.title)},")
         lines.append(f"        \"agent\": {json.dumps(t.agent)},")
         lines.append(f"        \"dependencies\": {json.dumps(t.dependencies)},")
-        lines.append(f"        \"description\": {json.dumps(t.description[:200])},")
+        lines.append(f"        \"description\": {json.dumps(t.description)},")
         lines.append(f"        \"priority\": {json.dumps(t.priority)},")
         lines.append(f"    }},")
     lines.append("]")
@@ -406,9 +394,9 @@ def generate_workflow_script(plan_json: dict) -> str:
     lines.append("")
     lines.append("    manifest = generate_manifest()")
     lines.append("")
-    lines.append("    if args.json or not args.summary:")
+    lines.append("    if args.json:")
     lines.append("        print(json.dumps(manifest, indent=2, ensure_ascii=False))")
-    lines.append("    if args.summary or not args.json:")
+    lines.append("    elif args.summary:")
     lines.append("        print(f\"\\n⚡ Workflow: {GOAL}\")")
     lines.append("        print(f\"   Tasks: {manifest['total_tasks']} | Layers: {manifest['total_layers']}\")")
     lines.append("        for layer in manifest['layers']:")
@@ -417,6 +405,12 @@ def generate_workflow_script(plan_json: dict) -> str:
     lines.append("            for t in layer['tasks']:")
     lines.append("                deps = f\" ← {', '.join(t['depends_on'])}\" if t['depends_on'] else ''")
     lines.append("                print(f\"     [{t['agent_type']}] {t['id']}: {t['title']}{deps}\")")
+    lines.append("    else:")
+    lines.append("        # Default: print JSON manifest (parseable) followed by summary to stderr")
+    lines.append("        import sys")
+    lines.append("        print(json.dumps(manifest, indent=2, ensure_ascii=False))")
+    lines.append("        print(f\"\\n⚡ Workflow: {GOAL}\", file=sys.stderr)")
+    lines.append("        print(f\"   Tasks: {manifest['total_tasks']} | Layers: {manifest['total_layers']}\", file=sys.stderr)")
 
     return "\n".join(lines)
 
@@ -452,8 +446,9 @@ def main():
             print(script)
 
     elif args.command == "run":
-        # Execute the generated script
-        exec(open(args.script).read())
+        # Execute the generated script in a clean namespace
+        import subprocess
+        subprocess.run([sys.executable, args.script])
 
     elif args.command == "resume":
         wf = Workflow("resume", state_dir=args.state_dir)

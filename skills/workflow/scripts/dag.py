@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from task_schema import TaskPlan, TaskDefinition, topological_layers, TaskStatus
 
 
-from term_utils import Term as C
+from term_utils import Term as C, strip_ansi
 
 # Import icons from task_schema
 from task_schema import STATUS_ICONS, AGENT_ICONS
@@ -130,18 +130,22 @@ def generate_ascii(plan: TaskPlan, results: Optional[dict] = None) -> str:
         failed = sum(1 for r in results.values() if r.status == TaskStatus.FAILED.value)
         in_prog = sum(1 for r in results.values() if r.status == TaskStatus.IN_PROGRESS.value)
         pending = sum(1 for r in results.values() if r.status == TaskStatus.PENDING.value)
+        skipped = sum(1 for r in results.values() if r.status == TaskStatus.SKIPPED.value)
         total = len(results)
-        pct = round((completed / total * 100)) if total > 0 else 0
+        pct = round(((completed + skipped) / total * 100)) if total > 0 else 0
 
-        stat_line = f"  {C.GREEN}✅ {completed}{C.RESET} completed  {C.YELLOW}🔄 {in_prog}{C.RESET} running  {C.DIM}⬜ {pending}{C.RESET} pending  {C.RED}❌ {failed}{C.RESET} failed  "
-        lines.append(f"{C.BOLD}{C.CYAN}║{C.RESET}{stat_line}{' ' * (width - len(stat_line) - 2)}{C.BOLD}{C.CYAN}║{C.RESET}")
+        stat_line = f"  {C.GREEN}✅ {completed}{C.RESET} completed  {C.YELLOW}🔄 {in_prog}{C.RESET} running  {C.DIM}⬜ {pending}{C.RESET} pending  {C.RED}❌ {failed}{C.RESET} failed"
+        if skipped > 0:
+            stat_line += f"  {C.DIM}⏭️ {skipped}{C.RESET} skipped"
+        stat_line += "  "
+        lines.append(f"{C.BOLD}{C.CYAN}║{C.RESET}{stat_line}{' ' * (width - len(strip_ansi(stat_line)) - 2)}{C.BOLD}{C.CYAN}║{C.RESET}")
 
         # Progress bar
         bar_width = width - 10
         filled = int(bar_width * pct / 100)
         bar = "█" * filled + "░" * (bar_width - filled)
         bar_line = f"  [{C.GREEN}{bar}{C.RESET}] {pct}%"
-        lines.append(f"{C.BOLD}{C.CYAN}║{C.RESET}{bar_line}{' ' * (width - len(bar_line) - 2)}{C.BOLD}{C.CYAN}║{C.RESET}")
+        lines.append(f"{C.BOLD}{C.CYAN}║{C.RESET}{bar_line}{' ' * (width - len(strip_ansi(bar_line)) - 2)}{C.BOLD}{C.CYAN}║{C.RESET}")
 
         lines.append(f"{C.BOLD}{C.CYAN}╠{'─' * (width - 2)}╣{C.RESET}")
 
@@ -182,11 +186,11 @@ def generate_ascii(plan: TaskPlan, results: Optional[dict] = None) -> str:
             # Dependencies indicator
             if task.dependencies:
                 deps_str = " ← " + ", ".join(task.dependencies)
-                if len(task_line) + len(deps_str) > width - 4:
+                if len(strip_ansi(task_line)) + len(deps_str) > width - 4:
                     deps_str = " ← ..."
                 task_line += f"{C.DIM}{deps_str}{C.RESET}"
 
-            lines.append(f"{C.BOLD}{C.CYAN}║{C.RESET} {task_line}{' ' * (width - len(task_line) - 3)}{C.BOLD}{C.CYAN}║{C.RESET}")
+            lines.append(f"{C.BOLD}{C.CYAN}║{C.RESET} {task_line}{' ' * (width - len(strip_ansi(task_line)) - 3)}{C.BOLD}{C.CYAN}║{C.RESET}")
 
         # Separator between layers
         if layer_idx < len(layers) - 1:
