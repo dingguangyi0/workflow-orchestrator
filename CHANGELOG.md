@@ -2,6 +2,21 @@
 
 All notable changes to the Workflow Orchestrator project will be documented in this file.
 
+## [2.1.1] — 2026-06-01
+
+### Added (documentation & planning)
+- `docs/IMPROVEMENT_PLAN_v2.2.md` — 8-gap improvement plan from real-world `/wf` testing
+- `docs/ROADMAP_TO_OFFICIAL_PARITY.md` — full parity roadmap vs official Dynamic Workflows, including Claude Agent SDK integration strategy (Hook → MCP Bridge → SDK Direct)
+- `docs/agent-protocols-infrastructure-report.md` — MCP/A2A/Agentic RAG protocol research (T4 output)
+- `reports/` — T3-T8 workflow execution outputs (AI framework research, gap analysis, integration architecture, risk assessment, migration roadmap)
+
+### Key findings
+- Claude Agent SDK (`claude-agent-sdk` v0.1.65) confirmed — supports programmatic sub-agent spawning, isolated contexts, parallel execution
+- 3 upgrade paths identified: Hook-based (low effort), MCP Bridge (medium), SDK Direct (high)
+- Agent definitions in `agents/` directory are SDK-compatible (same `.claude/agents/` format)
+
+---
+
 ## [2.1.1] — 2026-05-31
 
 ### Simplified: removed over-engineered execution strategy
