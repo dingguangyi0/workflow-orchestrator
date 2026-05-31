@@ -207,3 +207,43 @@ jobs:
 
           # Missing tasks
           echo '{"goal":"test"}' | python task_schema.py --validate && exit 1 || echo "  ✅ missing tasks rejected"
+
+      - name: Stats recalculation test
+        run: |
+          cd skills/workflow/scripts
+
+          cat > /tmp/test_plan_stats.json << 'EOF'
+          {"goal":"Stats Test","goal_type":"development","tasks":[
+            {"id":"T1","title":"Task 1","description":"","agent":"worker","dependencies":[],"expected_output":"","file_patterns":[],"priority":"high"},
+            {"id":"T2","title":"Task 2","description":"","agent":"worker","dependencies":[],"expected_output":"","file_patterns":[],"priority":"high"}
+          ]}
+          EOF
+
+          cat /tmp/test_plan_stats.json | python task_schema.py --init-state > /tmp/state_stats.json
+          cat /tmp/state_stats.json | python task_schema.py --update-status \
+            --task T1 completed --task T2 in_progress > /tmp/state_stats2.json
+
+          python -c "
+          import json
+          s=json.load(open('/tmp/state_stats2.json'))
+          assert s['stats']['completed']==1, f'Expected 1 completed, got {s[\"stats\"][\"completed\"]}'
+          assert s['stats']['in_progress']==1, f'Expected 1 in_progress, got {s[\"stats\"][\"in_progress\"]}'
+          assert s['stats']['pending']==0, f'Expected 0 pending, got {s[\"stats\"][\"pending\"]}'
+          print('  ✅ stats recalculated correctly')
+          "
+
+      - name: Agent output validation test
+        run: |
+          cd skills/workflow/scripts
+
+          # Permission error should be detected
+          echo "I cannot access this file due to permission denied" | python task_schema.py --validate-output && exit 1 || echo "  ✅ permission error detected"
+
+          # Valid output should pass
+          echo "This is a comprehensive analysis report with over fifty characters of meaningful content." | python task_schema.py --validate-output && echo "  ✅ valid output accepted" || { echo "  ❌ valid output rejected"; exit 1; }
+
+          # Too short output should fail
+          echo "OK" | python task_schema.py --validate-output && exit 1 || echo "  ✅ short output rejected"
+
+          # Empty output should fail
+          echo "" | python task_schema.py --validate-output && exit 1 || echo "  ✅ empty output rejected"

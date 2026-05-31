@@ -156,27 +156,45 @@ def resume_from_checkpoint(checkpoint_path: str, target_dir: str) -> Optional[di
         return None
 
     with open(checkpoint_path) as f:
-        state = json.load(f)
+        data = json.load(f)
+
+    # Reconstruct WorkflowState so stats auto-recalculate on to_dict()
+    plan_dict = data.get("plan", {})
+    plan = TaskPlan.from_dict(plan_dict) if plan_dict else None
+    results = {
+        k: TaskResult.from_dict(v)
+        for k, v in data.get("results", {}).items()
+    }
+    state = WorkflowState(
+        plan=plan, results=results,
+        current_layer=data.get("current_layer", 0),
+        total_layers=data.get("total_layers", 0),
+        phase=data.get("phase", "init"),
+    )
 
     # Reset in_progress tasks to pending (they didn't complete)
-    for tid, result in state.get("results", {}).items():
-        if result.get("status") == "in_progress":
-            result["status"] = "pending"
-            result["started_at"] = ""
+    for tid, r in state.results.items():
+        if r.status == TaskStatus.IN_PROGRESS.value:
+            r.status = TaskStatus.PENDING.value
+            r.started_at = ""
+
+    output = state.to_dict()  # stats are fresh
 
     # Save to target workflow dir
     os.makedirs(target_dir, exist_ok=True)
-    plan = state.get("plan", {})
+    plan_data = data.get("plan", {})
     with open(os.path.join(target_dir, "plan.json"), "w") as f:
-        json.dump(plan, f, indent=2)
+        json.dump(plan_data, f, indent=2)
     with open(os.path.join(target_dir, "state.json"), "w") as f:
-        json.dump(state, f, indent=2)
+        json.dump(output, f, indent=2)
 
-    return state
+    return output
 
 
-def detect_interrupted_workflow(workflow_dir: str) -> Optional[dict]:
-    """Check if there's an interrupted workflow to resume."""
+def detect_interrupted_workflow(workflow_dir: str, timeout_minutes: int = 5) -> Optional[dict]:
+    """Check if there's an interrupted workflow to resume.
+    Detects both: interrupted phases AND orphaned in_progress tasks
+    that have been stuck longer than timeout_minutes."""
     state_path = os.path.join(workflow_dir, "state.json")
     if not os.path.exists(state_path):
         return None
@@ -186,6 +204,16 @@ def detect_interrupted_workflow(workflow_dir: str) -> Optional[dict]:
         phase = state.get("phase", "")
         if phase in ("executing", "handling_failures"):
             return state
+        # Also check for orphaned in_progress tasks stuck beyond timeout
+        now = datetime.now(timezone.utc)
+        for tid, r in state.get("results", {}).items():
+            if r.get("status") == "in_progress" and r.get("started_at"):
+                try:
+                    started = datetime.fromisoformat(r["started_at"])
+                    if (now - started).total_seconds() > timeout_minutes * 60:
+                        return state
+                except (ValueError, TypeError):
+                    pass
     except (json.JSONDecodeError, KeyError):
         pass
     return None

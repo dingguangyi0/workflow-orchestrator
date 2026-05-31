@@ -13,6 +13,7 @@ All other scripts (dag.py, reporter.py, monitor.py) import from this module.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from enum import Enum
@@ -334,6 +335,75 @@ def topological_layers(tasks: list[TaskDefinition]) -> list[list[str]]:
     return layers
 
 
+# ── Execution Mode Classification ──────────────────────────────────────────
+
+def classify_execution_mode(task: TaskDefinition) -> str:
+    """
+    Classify how a task should be executed given sub-agent permission constraints.
+
+    Background Agent() calls in Claude Code have restricted sandboxes:
+    - Limited file system access (only /tmp and plugin directories)
+    - Bash/WebSearch/WebFetch may be denied
+
+    Returns:
+        "sync_main" — MUST run in main context (needs full file/web access)
+        "agent_background" — CAN run as background Agent() call
+    """
+    MODE_MAP = {
+        "explorer": "sync_main",       # Needs file system access to READ project files
+        "worker": "agent_background",  # Default for analysis/synthesis workers
+        "implementer": "agent_background",  # Writes code, works within sandbox
+        "reviewer": "agent_background",     # Reviews with pre-fetched context
+        "orchestrator": "agent_background",
+    }
+    return MODE_MAP.get(task.agent, "agent_background")
+
+
+# ── Agent Output Validation ────────────────────────────────────────────────
+
+# Patterns that indicate a background agent failed due to permission/access issues
+_AGENT_FAILURE_PATTERNS = [
+    r"(?i)permission denied",
+    r"(?i)cannot access",
+    r"(?i)cannot read",
+    r"(?i)unable to access",
+    r"(?i)access denied",
+    r"(?i)operation not permitted",
+    r"(?i)I cannot (access|read|open|search|find)",
+    r"(?i)I('m|\s+am) unable to",
+    r"(?i)no such file or directory",
+    r"(?i)not authorized",
+    r"(?i)restricted sandbox",
+    r"(?i)tool .* not available",
+    r"(?i)(WebSearch|WebFetch|Bash).*(not available|denied|restricted)",
+]
+
+
+def validate_agent_output(output: str) -> tuple:
+    """
+    Validate that an agent produced useful output.
+
+    Returns (is_valid, reason).
+    - is_valid=True: output appears useful
+    - is_valid=False: output is empty, an error message, or permission failure
+    """
+    if not output or not output.strip():
+        return False, "empty_output"
+
+    stripped = output.strip()
+
+    # Check for permission/access failure patterns
+    for pattern in _AGENT_FAILURE_PATTERNS:
+        if re.search(pattern, stripped):
+            return False, f"permission_error: {pattern}"
+
+    # Output too short to be meaningful (< 50 chars)
+    if len(stripped) < 50:
+        return False, "output_too_short"
+
+    return True, "valid"
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -349,8 +419,24 @@ def main():
     parser.add_argument("--error", action="append", nargs=2, metavar=("ID", "MSG"), default=[], help="Set task error message (repeatable)")
     parser.add_argument("--layer", type=int, help="Set current layer")
     parser.add_argument("--phase", type=str, help="Set workflow phase")
+    parser.add_argument("--validate-output", action="store_true", help="Validate agent output text from stdin")
     args = parser.parse_args()
 
+    if args.validate_output:
+        # Validate agent output text — stdin is plain text, not JSON
+        try:
+            raw = sys.stdin.read()
+        except EOFError:
+            print("❌ No input provided", file=sys.stderr)
+            sys.exit(1)
+        is_valid, reason = validate_agent_output(raw)
+        result = {"valid": is_valid, "reason": reason}
+        print(json.dumps(result))
+        if not is_valid:
+            sys.exit(1)
+        return
+
+    # All other commands expect JSON input
     try:
         raw = sys.stdin.read()
         data = json.loads(raw)
@@ -362,26 +448,41 @@ def main():
         sys.exit(1)
 
     if args.update_status:
-        # Update workflow state from CLI flags
+        # Reconstruct WorkflowState from raw data so stats auto-recalculate
+        plan = TaskPlan.from_dict(data.get("plan", {})) if data.get("plan") else None
+        results = {
+            k: TaskResult.from_dict(v)
+            for k, v in data.get("results", {}).items()
+        }
+        state = WorkflowState(
+            plan=plan, results=results,
+            current_layer=data.get("current_layer", 0),
+            total_layers=data.get("total_layers", 0),
+            phase=data.get("phase", "init"),
+        )
+
+        # Apply mutations from CLI flags to the state object
         now = datetime.now(timezone.utc).isoformat()
         for task_id, status in args.task:
-            if task_id in data.get("results", {}):
-                data["results"][task_id]["status"] = status
+            if task_id in state.results:
+                state.results[task_id].status = status
                 if status == "in_progress":
-                    data["results"][task_id]["started_at"] = now
+                    state.results[task_id].started_at = now
                 elif status in ("completed", "failed", "skipped"):
-                    data["results"][task_id]["completed_at"] = now
+                    state.results[task_id].completed_at = now
         for task_id, summary in args.output:
-            if task_id in data.get("results", {}):
-                data["results"][task_id]["output_summary"] = summary
+            if task_id in state.results:
+                state.results[task_id].output_summary = summary
         for task_id, msg in args.error:
-            if task_id in data.get("results", {}):
-                data["results"][task_id]["error_message"] = msg
+            if task_id in state.results:
+                state.results[task_id].error_message = msg
         if args.layer is not None:
-            data["current_layer"] = args.layer
+            state.current_layer = args.layer
         if args.phase:
-            data["phase"] = args.phase
-        print(json.dumps(data, indent=2))
+            state.phase = args.phase
+
+        # to_dict() recalculates stats from actual results
+        print(json.dumps(state.to_dict(), indent=2))
 
     elif args.validate:
         plan = TaskPlan.from_dict(data)

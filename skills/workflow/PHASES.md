@@ -125,45 +125,65 @@ Proceed with execution? [Y/n/modify]
 
 ## ⚡ Phase 3: LAYERED PARALLEL EXECUTION
 
-### Step 3.1: Read State
+### Step 3.1: Read State & Classify Tasks
 
 ```bash
 cat "$WORKFLOW_DIR/state.json"
+cat "$WORKFLOW_DIR/plan.json" | python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/scripts/task_schema.py --layers
 ```
 
-### Step 3.2: Update State (Helper)
+For the current layer (starting from 0), classify each ready task:
 
+| Agent type | Execution mode | Reason |
+|-----------|---------------|--------|
+| `explorer` | **sync_main** | Needs full file system access |
+| `worker` (research) | **sync_main** | Needs WebSearch/WebFetch |
+| `worker` (analysis) | **agent_background** | Works with context from deps |
+| `implementer` | **agent_background** | Writes code within sandbox |
+| `reviewer` | **agent_background** | Reviews with pre-fetched context |
+
+**Layer 0 Rule**: ALL Layer 0 tasks run in MAIN context (Step 3.2).
+Explorer and research tasks need full permissions that background agents lack.
+
+### Step 3.2: Execute Sync Tasks (MAIN CONTEXT)
+
+For ALL sync_main tasks in the current layer, execute them YOURSELF:
+
+1. Read the task description as your instructions
+2. Use your full tools (Read, Bash, Grep, Glob, WebSearch, WebFetch)
+3. Document findings in structured format
+4. Update state immediately after each task:
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/scripts/task_schema.py --update-status \
-  --task T1 in_progress \
-  --task T2 in_progress \
-  --layer 0 --phase executing \
+  --task <id> completed --output <id> "<findings summary>" \
   < "$WORKFLOW_DIR/state.json" > "$WORKFLOW_DIR/state.json.tmp" \
   && mv "$WORKFLOW_DIR/state.json.tmp" "$WORKFLOW_DIR/state.json"
 ```
 
-### Step 3.3: Compute Ready Tasks
+**For Layer 0 specifically**: Execute all explorer/research tasks sequentially
+in main context. This sacrifices Layer 0 parallelism but ensures reliability —
+background agents cannot access project files or the web.
 
-```bash
-cat "$WORKFLOW_DIR/plan.json" | python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/scripts/task_schema.py --layers
-```
+### Step 3.3: Pre-Fetch Context for Background Tasks
 
-For the current layer (starting from 0), find all tasks whose:
-- Status is `pending`
-- All dependencies are `completed`
+For agent_background tasks, collect context from completed dependencies:
+- Task ID and title from each completed dependency
+- Output summary (max 500 chars each)
+- Key file paths discovered in exploration
+- The original workflow goal
 
-### Step 3.4: Launch ALL Ready Tasks IN PARALLEL
+### Step 3.4: Launch Background Tasks (PARALLEL)
 
-**CRITICAL**: Launch all ready tasks in a SINGLE tool call batch — each as a separate `Agent` invocation with `run_in_background: true`.
+Launch ALL ready agent_background tasks in a SINGLE tool call batch,
+each as a separate `Agent` invocation with `run_in_background: true`:
 
-For each ready task:
 ```
 Agent(
   description: "<task.id>: <task.title>"
   subagent_type: "general-purpose"
   run_in_background: true
   prompt: |
-    You are a <task.agent>: <agent role description>.
+    You are a <task.agent> specialist.
     
     ## Task <task.id>: <task.title>
     ## Overall Goal: <plan.goal>
@@ -174,37 +194,94 @@ Agent(
     <task.expected_output>
     
     ## Context from Completed Tasks
-    <summaries of completed dependency tasks, max 300 chars each>
+    <summaries of completed dependency tasks, max 500 chars each>
+    <key file paths from exploration>
     
-    Output a structured report of your findings/work.
+    Output a structured report. Include specific file paths,
+    concrete findings, and actionable details.
 ```
-
-**Agent role mapping:**
-- `explorer` → "code exploration specialist. Search, read, and analyze code. Report findings in structured format. READ-ONLY."
-- `worker` → "general-purpose worker. Execute research, write docs, modify configs. Be thorough and precise."
-- `implementer` → "code implementation specialist. Write/edit code following existing project style. Run tests if available."
-- `reviewer` → "code review specialist. Review changes for correctness, security, and quality. Run tests."
 
 Send ALL Agent calls for the current layer in ONE message.
 
 ### Step 3.5: Wait for Completion
 
-**Do NOT poll.** The system re-invokes you automatically when background agents complete.
-- Single safety net: ScheduleWakeup(60s) only if >3 agents launched
-- Hard timeout: 90s — switch to synchronous execution if agents haven't completed
+**Do NOT poll.** The system re-invokes you when background agents complete.
+- Safety net: if >3 agents launched, send a single ScheduleWakeup(90s)
+- Hard timeout: 90s — if agents haven't completed, check individually
 
-### Step 3.6: Update State & Advance
+### Step 3.6: Validate Output & Update State
 
+For each completed background agent:
+
+**1. Validate output** — check it is NOT permission-error or empty:
+```bash
+echo '<agent_output>' | python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/scripts/task_schema.py --validate-output
+```
+
+**2. If valid** (exit code 0): mark as completed:
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/scripts/task_schema.py --update-status \
-  --task T1 completed --output T1 "<summary>" \
-  --task T2 completed --output T2 "<summary>" \
-  --layer 1 --phase executing \
+  --task <id> completed --output <id> "<output summary>" \
   < "$WORKFLOW_DIR/state.json" > "$WORKFLOW_DIR/state.json.tmp" \
   && mv "$WORKFLOW_DIR/state.json.tmp" "$WORKFLOW_DIR/state.json"
 ```
 
+**3. If invalid** (exit code 1 — permission error / empty):
+- Mark status as `failed` with error_message = validation reason
+- **Retry ONCE in MAIN context** using your full permissions
+- Set error_message for the retry: `--error <id> "auto-retry after validation failure"`
+- If main context retry succeeds → mark completed
+- If main context retry also fails → escalate to user
+
+### Step 3.7: Advance to Next Layer
+
+After all tasks in the current layer are settled (completed/failed/skipped):
+
+```bash
+# Show incremental results
+cat "$WORKFLOW_DIR/state.json" | python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/scripts/monitor.py --compact
+
+# Auto-checkpoint
+python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/scripts/workflow_manager.py checkpoint \
+  "$WORKFLOW_DIR/state.json" --label "layer-<N>-complete"
+```
+
+Briefly summarize this layer's key outputs to the user, then proceed to
+the next layer (or Phase 6 if all layers are done).
+
 ---
+
+## 🔍 Phase 3.5: AGENT OUTPUT VALIDATION
+
+After each background agent completes, validate its output BEFORE marking
+the task as completed. Background agents have limited sandbox permissions
+and may return permission errors instead of actual work.
+
+### Validation Steps
+
+1. Check the agent's response for permission/access failure patterns:
+   - "permission denied", "cannot access", "I cannot read"
+   - "tool not available", "restricted sandbox"
+   - "WebSearch/Bash/Fetch denied"
+2. Check output is non-empty and meaningful (≥ 50 chars)
+3. If validation fails → retry ONCE in MAIN context
+
+### Programmatic Validation
+
+```bash
+echo '<agent_output>' | python3 ${CLAUDE_PLUGIN_ROOT}/skills/workflow/scripts/task_schema.py --validate-output
+```
+
+Returns: `{"valid": true/false, "reason": "permission_error|empty_output|output_too_short|valid"}`
+
+### Retry Protocol
+
+When validation fails:
+1. Mark task as `failed` in state with validation reason
+2. Execute the task YOURSELF in main context (you have full permissions)
+3. You have access to Read, Bash, Grep, Glob, WebSearch, WebFetch
+4. Update state with your results (mark completed with your output)
+5. If you also fail → escalate to user with clear error message
 
 ## 🔧 Phase 4: REAL-TIME MONITORING (Event-Driven)
 

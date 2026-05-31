@@ -2,6 +2,38 @@
 
 All notable changes to the Workflow Orchestrator project will be documented in this file.
 
+## [2.1.0] — 2026-05-31
+
+### Fixed (from real-world `/wf` execution testing)
+
+**Bug fixes:**
+- **Stale `stats` after `--update-status`** (`task_schema.py`): `--update-status` now reconstructs `WorkflowState` and outputs via `to_dict()`, ensuring `stats` (completed/failed/in_progress/pending/progress_pct) are always in sync with `results`.
+- **Resume state with stale stats** (`workflow_engine.py`): `resume()` now reconstructs `WorkflowState` and uses `_save_state()` which recalculates `stats` via `to_dict()`.
+- **Resume checkpoint stale stats** (`workflow_manager.py`): `resume_from_checkpoint()` now reconstructs `WorkflowState` → `to_dict()` before saving.
+
+### Added (execution strategy redesign)
+
+**Permission-aware execution:**
+- `classify_execution_mode()`: Tasks are classified as `sync_main` (explorers needing file access) or `agent_background` (implementers/reviewers) based on agent type.
+- **Layer 0 Rule**: All Layer 0 tasks (explorer + early worker) run synchronously in MAIN context — they need full file system and web access that background agents lack.
+- `validate_agent_output()`: Detects permission errors ("permission denied", "cannot access", "tool not available", etc.), empty output, and too-short output (< 50 chars).
+- `--validate-output` CLI flag: Programmatic output validation returning `{"valid": true/false, "reason": "..."}`.
+- **Auto-retry fallback**: When background agent output fails validation, retry ONCE in MAIN context with full permissions.
+
+**State management:**
+- `detect_interrupted_workflow()`: Now also detects orphaned `in_progress` tasks stuck beyond 5-minute timeout.
+
+**CI:**
+- Stats recalculation test: Verifies `stats` block matches actual results after `--update-status`.
+- Agent output validation test: Tests permission error detection, valid output, short output, and empty output.
+
+### Changed (protocol documentation)
+
+- **SKILL.md**: "Agent Type Mapping" replaced with "Task Execution Classification" table showing sync_main vs agent_background modes. Added Key Rules #9-10 (Layer 0 sync, validate output).
+- **PHASES.md**: Phase 3 completely rewritten as "Permission-Aware Layered Execution" with 7 steps: classify → sync_main → pre-fetch context → launch background → wait → validate → advance. Added Phase 3.5 "Agent Output Validation" with retry protocol.
+
+---
+
 ## [2.0.1] — 2026-05-31
 
 ### Fixed (15 bugs from systematic code review)

@@ -256,15 +256,27 @@ class Workflow:
         with open(state_path) as f:
             data = json.load(f)
 
-        # Reset in_progress tasks to pending and write back to disk
-        for tid, r in data.get("results", {}).items():
-            if r.get("status") == "in_progress":
-                r["status"] = "pending"
-                r["started_at"] = ""
+        # Reconstruct WorkflowState (stats auto-recalculate on to_dict())
+        plan = TaskPlan.from_dict(data.get("plan", {})) if data.get("plan") else None
+        results = {
+            k: TaskResult.from_dict(v)
+            for k, v in data.get("results", {}).items()
+        }
+        self.state = WorkflowState(
+            plan=plan, results=results,
+            current_layer=data.get("current_layer", 0),
+            total_layers=data.get("total_layers", 0),
+            phase=data.get("phase", "init"),
+        )
 
-        # Persist the reset state
-        with open(state_path, "w") as f:
-            json.dump(data, f, indent=2)
+        # Reset in_progress tasks to pending
+        for tid, r in self.state.results.items():
+            if r.status == TaskStatus.IN_PROGRESS.value:
+                r.status = TaskStatus.PENDING.value
+                r.started_at = ""
+
+        # _save_state() uses state.to_dict() which recalculates stats
+        self._save_state()
 
         # Find which tasks are already done (completed or skipped)
         done = {tid for tid, r in data.get("results", {}).items()
