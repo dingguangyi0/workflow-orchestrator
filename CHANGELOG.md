@@ -2,6 +2,38 @@
 
 All notable changes to the Workflow Orchestrator project will be documented in this file.
 
+## [2.1.1] — 2026-05-31
+
+### Simplified: removed over-engineered execution strategy
+
+**Empirical finding**: Background agents with `subagent_type: "general-purpose"`
++ `run_in_background: true` successfully pass file access, Bash, and WebSearch
+tests. Plugin-registered agent types (`worker`, `explorer`, etc.) cannot be used
+as `subagent_type` values — they are prompt templates only. The v2.1.0 "sync_main"
+execution strategy was based on a false premise.
+
+**Removed:**
+- `classify_execution_mode()` function — unnecessary task classification
+- `sync_main` execution path — all tasks now use standard background Agent() calls
+- Layer 0 sync rule — Layer 0 now runs in parallel like all other layers
+
+**Added:**
+- **Permission warm-up** (PHASES.md Step 3.0): before launching agents, do a quick
+  `ls <project_dir>` in main context to pre-authorize file access for the session.
+  Background agents inherit the session's permission grants.
+
+**Kept (from v2.1.0):**
+- `validate_agent_output()` + `--validate-output` CLI — safety net for agent failures
+- Stats recalculation fix in `--update-status`, `resume()`, `resume_from_checkpoint()`
+- Orphaned task detection with timeout
+- Agent output validation protocol (Phase 3.5)
+
+**Protocol:** PHASES.md Phase 3 simplified from 7-step classification-based
+execution back to clean parallel launch model. SKILL.md reverted to simple
+Agent Type Mapping table with permission warm-up guidance.
+
+---
+
 ## [2.1.0] — 2026-05-31
 
 ### Fixed (from real-world `/wf` execution testing)

@@ -335,30 +335,6 @@ def topological_layers(tasks: list[TaskDefinition]) -> list[list[str]]:
     return layers
 
 
-# ── Execution Mode Classification ──────────────────────────────────────────
-
-def classify_execution_mode(task: TaskDefinition) -> str:
-    """
-    Classify how a task should be executed given sub-agent permission constraints.
-
-    Background Agent() calls in Claude Code have restricted sandboxes:
-    - Limited file system access (only /tmp and plugin directories)
-    - Bash/WebSearch/WebFetch may be denied
-
-    Returns:
-        "sync_main" — MUST run in main context (needs full file/web access)
-        "agent_background" — CAN run as background Agent() call
-    """
-    MODE_MAP = {
-        "explorer": "sync_main",       # Needs file system access to READ project files
-        "worker": "agent_background",  # Default for analysis/synthesis workers
-        "implementer": "agent_background",  # Writes code, works within sandbox
-        "reviewer": "agent_background",     # Reviews with pre-fetched context
-        "orchestrator": "agent_background",
-    }
-    return MODE_MAP.get(task.agent, "agent_background")
-
-
 # ── Agent Output Validation ────────────────────────────────────────────────
 
 # Patterns that indicate a background agent failed due to permission/access issues

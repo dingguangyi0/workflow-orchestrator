@@ -101,23 +101,29 @@ mkdir -p "$WORKFLOW_DIR"
 
 ---
 
-## 🔀 Task Execution Classification (CRITICAL)
+## 🔀 Agent Type Mapping (CRITICAL)
 
-Background Agent() calls have limited permissions (restricted file access,
-no WebSearch/WebFetch in sandbox). Route tasks based on their needs:
+Use `subagent_type: "general-purpose"` for ALL task agents.
+(Plugin-registered agent types like `worker`/`explorer` are prompt templates only — they cannot be used as `subagent_type` values.)
 
-| Agent Type | Execution Mode | Where | Prompt prefix |
-|-----------|---------------|-------|--------------|
-| `explorer` | **sync_main** | MAIN context (needs file access) | "code exploration specialist. Search, read, analyze. READ-ONLY." |
-| `worker` (research) | **sync_main** | MAIN context (needs WebSearch/WebFetch) | "research specialist. Use WebSearch, WebFetch, docs." |
-| `worker` (analysis) | **agent_background** | Background Agent() | "general-purpose worker. Analysis, synthesis, docs." |
-| `implementer` | **agent_background** | Background Agent() | "code implementation specialist. Write/edit code." |
-| `reviewer` | **agent_background** | Background Agent() | "code review specialist. Review for correctness, quality." |
+Pass the role-specific system prompt in the `prompt` parameter:
 
-**Layer 0 Rule**: All Layer 0 tasks run SYNCHRONOUSLY in MAIN context.
-Explorer and early research tasks need full file system + web access.
+| Role | Prompt prefix |
+|------|--------------|
+| `explorer` | "code exploration specialist. Search, read, analyze. READ-ONLY." |
+| `worker` | "general-purpose worker. Research, docs, configs, scripts." |
+| `implementer` | "code implementation specialist. Write/edit code, match project style." |
+| `reviewer` | "code review specialist. Review for correctness, security, quality." |
 
-**Fallback**: If a background agent returns permission errors or empty output,
+**Permission warm-up (IMPORTANT)**: Before launching background agents,
+do a quick access check in MAIN context to ensure the session has
+granted permissions for the paths and tools the agents will need:
+```bash
+ls <project_dir> > /dev/null 2>&1  # pre-authorize file access
+```
+This prevents agents from hitting first-time permission prompts.
+
+**Fallback**: If an agent returns permission errors or empty output,
 validate with `task_schema.py --validate-output`, then retry ONCE in MAIN context.
 
 ---
@@ -185,7 +191,7 @@ See `PHASES.md` Phase 4.5 for the full verification protocol.
 6. Auto-checkpoint after each layer: `workflow_manager.py checkpoint`
 7. Offer template save on completion: `workflow_manager.py save`
 8. **Read `PHASES.md`** when entering a phase for full step-by-step instructions
-9. **Layer 0 always sync**: explorer + research tasks run in MAIN context (full permissions)
+9. **Permission warm-up**: before launching agents, `ls <project_path>` in main context to pre-authorize file access
 10. **Validate agent output** before marking completed — use `task_schema.py --validate-output` to check for permission errors or empty output. If invalid → retry ONCE in MAIN context
 
 ---
