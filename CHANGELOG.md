@@ -2,6 +2,29 @@
 
 All notable changes to the Workflow Orchestrator project will be documented in this file.
 
+## [2.2.0] — 2026-06-01
+
+### Changed — Repositioning (Official `/workflow` now available to all users)
+
+**Name change**: `workflow-orchestrator` → `wf-orchestrator`
+
+**Skill consolidation**: Removed `/workflow` skill to avoid conflict with official Claude Code built-in `/workflow` command. Plugin now only uses `/wf` abbreviation.
+
+- `plugin.json`: Removed `./skills/workflow` from skills list; updated name and description
+- `marketplace.json`: Updated name, description, keywords, skills list
+- `skills/wf/SKILL.md`: Rewritten from shortcut-forwarder to full standalone protocol
+- `skills/workflow/SKILL.md`: Deprecated — redirects to `/wf`
+
+**New positioning** — on top of official DW, not replacing it:
+- Agent SDK bridge (`claude-agent-sdk` integration coming in v2.3)
+- Multi-model routing (Haiku/Sonnet/Opus per task role — official uses one model)
+- Cross-platform (DeepSeek/OpenRouter compatible)
+- Template ecosystem (5 built-in + custom)
+- Pre-execution DAG visualization
+- Markdown execution reports
+
+---
+
 ## [2.1.1] — 2026-06-01
 
 ### Added (documentation & planning)

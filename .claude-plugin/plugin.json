@@ -1,7 +1,7 @@
 {
-  "name": "workflow-orchestrator",
-  "version": "2.0.0",
-  "description": "多 Agent 工作流编排插件 v2.0 — Python 编排脚本引擎 + 自动对抗验证 + 细粒度 checkpoint + 脚本可视化。100% 复刻 Claude Code Dynamic Workflows。集成 Superpowers TDD/Code Review 工程纪律。在任意 Claude Code 环境（包括 DeepSeek 代理）可用。",
+  "name": "wf-orchestrator",
+  "version": "2.2.0",
+  "description": "⚡ WF Orchestrator — 增强型多 Agent 工作流引擎。在官方 Dynamic Workflows 基础上提供：Agent SDK 桥接、多模型路由、跨平台兼容(DeepSeek/OpenRouter)、模板复用、DAG 可视化、Markdown 执行报告。使用 /wf 命令启动。注意：/workflow 命令由 Claude Code 官方功能提供。",
   "author": {
     "name": "Ding Guangyi"
   },
@@ -20,7 +20,7 @@
     "code-review"
   ],
   "category": "productivity",
-  "skills": ["./skills/workflow", "./skills/wf"],
+  "skills": ["./skills/wf"],
   "agents": [
     "./agents/orchestrator.md",
     "./agents/worker.md",

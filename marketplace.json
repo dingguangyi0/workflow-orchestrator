@@ -1,11 +1,11 @@
 {
-  "name": "workflow-orchestrator",
-  "version": "2.1.1",
+  "name": "wf-orchestrator",
+  "version": "2.2.0",
   "source": {
     "source": "github",
     "repo": "dingguangyi0/workflow-orchestrator"
   },
-  "description": "Multi-agent workflow orchestration plugin for Claude Code v2.0 — Python script engine + auto adversarial verification + fine-grained checkpoint. 100% mirrors Dynamic Workflows experience: DAG-based parallel sub-tasks, real-time event-driven monitoring, /wf shortcut, 5 built-in templates. Integrated with Superpowers for TDD discipline. Works with ANY Claude Code backend.",
+  "description": "⚡ WF Orchestrator — Enhanced multi-agent workflow engine on top of Claude Code official Dynamic Workflows. Features: Agent SDK bridge, multi-model routing (Haiku/Sonnet/Opus per task role), cross-platform (DeepSeek/OpenRouter compatible), reusable templates, pre-execution DAG visualization, Markdown execution reports. Use /wf to start. Note: /workflow is now handled by official Claude Code.",
   "author": {
     "name": "Ding Guangyi"
   },
@@ -18,20 +18,19 @@
     "multi-agent",
     "dag",
     "parallel-execution",
-    "dynamic-workflows",
-    "ultracode",
-    "superpowers",
-    "tdd",
-    "code-review",
+    "agent-sdk",
+    "multi-model",
+    "cross-platform",
+    "deepseek",
     "templates",
     "deep-research",
-    "script-engine",
+    "code-review",
     "adversarial-verification",
     "checkpoint",
     "claude-code-plugin"
   ],
   "category": "productivity",
-  "skills": ["./skills/workflow", "./skills/wf"],
+  "skills": ["./skills/wf"],
   "agents": [
     "./agents/orchestrator.md",
     "./agents/worker.md",
